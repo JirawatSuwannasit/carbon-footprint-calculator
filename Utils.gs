@@ -2,6 +2,7 @@ const SHEET_NAMES = {
   COMPANY: 'Company_Settings',
   DEPARTMENTS: 'Departments',
   FACTORS: 'Emission_Factors',
+  ACTIVITIES: 'Activity_Master',
   RECORDS: 'Activity_Records',
   DEPARTMENT_ACTIVITIES: 'Department_Activities'
 };
@@ -10,8 +11,9 @@ const HEADERS = {
   Company_Settings: ['company_id', 'company_name', 'site_name', 'report_year', 'base_year', 'prepared_by', 'created_at', 'updated_at'],
   Departments: ['department_id', 'department_name', 'description', 'is_active', 'created_at', 'updated_at'],
   Emission_Factors: ['factor_id', 'activity_name', 'activity_group', 'scope', 'category', 'unit', 'co2_factor', 'fossil_ch4_factor', 'ch4_factor', 'n2o_factor', 'total_co2e_factor', 'total_co2e_unit', 'factor_source', 'factor_year', 'gwp_version', 'is_active', 'created_at', 'updated_at'],
-  Department_Activities: ['department_activity_id', 'department_id', 'department_name', 'factor_id', 'activity_name', 'is_active', 'created_at', 'updated_at'],
-  Activity_Records: ['record_id', 'year', 'month', 'period', 'department_id', 'department_name', 'factor_id', 'activity_name', 'activity_group', 'scope', 'category', 'unit', 'amount', 'snapshot_total_co2e_factor', 'snapshot_total_co2e_unit', 'emission_kgco2e', 'emission_tco2e', 'factor_source', 'factor_year', 'gwp_version', 'remark', 'created_at', 'updated_at']
+  Activity_Master: ['activity_id', 'activity_name', 'activity_group', 'scope', 'category', 'unit', 'default_factor_id', 'is_active', 'created_at', 'updated_at'],
+  Department_Activities: ['department_activity_id', 'department_id', 'department_name', 'activity_id', 'activity_name', 'is_active', 'created_at', 'updated_at'],
+  Activity_Records: ['record_id', 'year', 'month', 'period', 'department_id', 'department_name', 'activity_id', 'activity_name', 'activity_group', 'scope', 'category', 'unit', 'factor_id', 'amount', 'snapshot_total_co2e_factor', 'snapshot_total_co2e_unit', 'emission_kgco2e', 'emission_tco2e', 'factor_source', 'factor_year', 'gwp_version', 'remark', 'created_at', 'updated_at']
 };
 
 function include(filename) {
@@ -139,6 +141,7 @@ function applyRecordFilters_(records, filters) {
       (!filters.month || String(record.month).padStart(2, '0') === String(filters.month).padStart(2, '0')) &&
       (!filters.department_id || String(record.department_id) === String(filters.department_id)) &&
       (!filters.factor_id || String(record.factor_id) === String(filters.factor_id)) &&
+      (!filters.activity_id || String(record.activity_id) === String(filters.activity_id)) &&
       (!filters.activity_name || String(record.activity_name).toLowerCase().indexOf(String(filters.activity_name).toLowerCase()) !== -1) &&
       (!filters.scope || String(record.scope) === String(filters.scope)) &&
       (!filters.category || String(record.category) === String(filters.category));

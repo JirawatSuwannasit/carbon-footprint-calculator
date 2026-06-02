@@ -36,7 +36,7 @@
         <label>Year<input name="year" type="number" required></label>
         <label>Month<select name="month" required></select></label>
         <label>Department<select name="department_id" required></select></label>
-        <label>Activity Name<select name="factor_id" required></select></label>
+        <label>Activity Name<select name="activity_id" required disabled><option value="">Select department first</option></select></label>
         <label>Amount<input name="amount" type="number" step="0.0001" min="0" required></label>
         <label>Unit<input name="unit" disabled></label>
         <label class="span-2">Remark<textarea name="remark"></textarea></label>
@@ -57,13 +57,9 @@
       <div class="filters"><input id="factorSearch" placeholder="Search factors"><button class="btn-primary" onclick="loadFactors(this)">Search</button><button class="btn-secondary" onclick="importSampleFactors(this)">Import sample emission factors</button></div>
       <div class="table-wrap"><table id="factorsTable"></table></div>
       <div class="card section-card">
-        <div class="page-header"><h3>Department Activities</h3><button class="btn-primary" onclick="loadDepartmentActivities(this)">Refresh Assignments</button></div>
-        <div class="filters">
-          <label>Department<select id="mapDepartment"></select></label>
-          <label>Activity / Emission Factor<select id="mapFactor"></select></label>
-          <button class="btn-save" onclick="assignDepartmentActivity(this)">Assign Activity</button>
-        </div>
-        <div class="table-wrap"><table id="departmentActivitiesTable"></table></div>
+        <div class="page-header"><h3>Activity Master</h3><button class="btn-primary" onclick="openActivityModal()">Add Activity</button></div>
+        <div class="filters"><input id="activitySearch" placeholder="Search activities"><button class="btn-primary" onclick="loadActivities(this)">Search</button></div>
+        <div class="table-wrap"><table id="activitiesTable"></table></div>
       </div>
     </section>
 

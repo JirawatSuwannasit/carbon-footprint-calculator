@@ -12,6 +12,7 @@ function setupDatabase() {
     seedDefaultCompanySettings_();
     seedDepartments_();
     seedEmissionFactors_();
+    seedActivities_();
     seedDepartmentActivities_();
     return { success: true, message: 'Database setup completed.' };
   } finally {
@@ -59,6 +60,12 @@ function sheetRowsToObjectsWithoutSetup_(sheet) {
 function migrateRowForHeaders_(row, headers) {
   const migrated = {};
   headers.forEach(function(header) { migrated[header] = row[header] !== undefined ? row[header] : ''; });
+  if (headers.indexOf('activity_id') !== -1 && !migrated.activity_id && row.activity_name) {
+    migrated.activity_id = row.activity_id || '';
+  }
+  if (headers.indexOf('default_factor_id') !== -1 && !migrated.default_factor_id) {
+    migrated.default_factor_id = row.default_factor_id || row.factor_id || '';
+  }
   if (headers.indexOf('snapshot_total_co2e_unit') !== -1 && !migrated.snapshot_total_co2e_unit) {
     migrated.snapshot_total_co2e_unit = row.total_co2e_unit || (row.unit ? 'kg CO2e/' + row.unit : 'kg CO2e/unit');
   }
@@ -120,17 +127,35 @@ function seedEmissionFactors_() {
 }
 
 
+
+function seedActivities_() {
+  const sheet = getSpreadsheet_().getSheetByName(SHEET_NAMES.ACTIVITIES);
+  if (sheet.getLastRow() > 1) return;
+  getEmissionFactors({ includeInactive: true }).forEach(function(factor) {
+    saveActivity({
+      activity_name: factor.activity_name,
+      activity_group: factor.activity_group,
+      scope: factor.scope,
+      category: factor.category,
+      unit: factor.unit,
+      default_factor_id: factor.factor_id,
+      is_active: true
+    });
+  });
+}
+
 function seedDepartmentActivities_() {
   const sheet = getSpreadsheet_().getSheetByName(SHEET_NAMES.DEPARTMENT_ACTIVITIES);
-  if (sheet.getLastRow() > 1) return;
+  const existingRows = sheetRowsToObjects_(sheet);
+  if (existingRows.some(function(row) { return row.activity_id; })) return;
   const departments = getDepartments({ includeInactive: true });
-  const factors = getEmissionFactors({ includeInactive: true });
+  const activities = getActivities({ includeInactive: true });
   const departmentByName = departments.reduce(function(map, department) {
     map[String(department.department_name).toLowerCase()] = department;
     return map;
   }, {});
-  const factorByName = factors.reduce(function(map, factor) {
-    map[String(factor.activity_name).toLowerCase()] = factor;
+  const activityByName = activities.reduce(function(map, activity) {
+    map[String(activity.activity_name).toLowerCase()] = activity;
     return map;
   }, {});
   const mappings = [
@@ -145,9 +170,9 @@ function seedDepartmentActivities_() {
   ];
   mappings.forEach(function(item) {
     const department = departmentByName[String(item[0]).toLowerCase()];
-    const factor = factorByName[String(item[1]).toLowerCase()];
-    if (department && factor) {
-      saveDepartmentActivity({ department_id: department.department_id, factor_id: factor.factor_id });
+    const activity = activityByName[String(item[1]).toLowerCase()];
+    if (department && activity) {
+      saveDepartmentActivity({ department_id: department.department_id, activity_id: activity.activity_id });
     }
   });
 }

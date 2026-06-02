@@ -3,6 +3,7 @@ const state = {
   departments: [],
   factors: [],
   allFactors: [],
+  activities: [],
   availableActivities: [],
   departmentActivities: [],
   records: [],
@@ -216,6 +217,7 @@ async function loadLookups() {
   state.departments = await runServer('getDepartments', { includeInactive: true });
   state.allFactors = await runServer('getEmissionFactors', { includeInactive: true });
   state.factors = state.allFactors;
+  state.activities = await runServer('getActivities', { includeInactive: true });
   state.departmentActivities = await runServer('getDepartmentActivities', { includeInactive: true });
 }
 
@@ -229,7 +231,7 @@ function buildFilters() {
 }
 
 async function loadAllPages() {
-  await Promise.allSettled([loadDashboard(), loadRecords(), loadFactors(), loadDepartments(), loadDepartmentActivities()]);
+  await Promise.allSettled([loadDashboard(), loadRecords(), loadFactors(), loadActivities(), loadDepartments()]);
 }
 
 async function loadDashboard(button) {
@@ -264,7 +266,7 @@ function initializeActivityForm() {
   form.month.value = form.month.value || String(new Date().getMonth() + 1).padStart(2, '0');
   form.department_id.innerHTML = optionHtml(activeOnly(state.departments), 'department_id', 'department_name', 'Select department');
   form.department_id.onchange = () => loadActivitiesForSelectedDepartment();
-  form.factor_id.onchange = updateFactorDetails;
+  form.activity_id.onchange = updateFactorDetails;
   form.amount.oninput = updateFactorDetails;
   form.onsubmit = saveActivityFromForm;
   clearActivitySelection('Select a department first.');
@@ -272,15 +274,15 @@ function initializeActivityForm() {
 
 function selectedFactor() {
   const form = document.getElementById('activityForm');
-  return state.availableActivities.find(factor => String(factor.factor_id) === form.factor_id.value) || {};
+  return state.availableActivities.find(activity => String(activity.activity_id) === form.activity_id.value) || {};
 }
 
 function clearActivitySelection(message) {
   const form = document.getElementById('activityForm');
   state.availableActivities = [];
-  form.factor_id.innerHTML = `<option value="">${message || 'Select activity'}</option>`;
-  form.factor_id.value = '';
-  form.factor_id.disabled = true;
+  form.activity_id.innerHTML = `<option value="">${message || 'Select activity'}</option>`;
+  form.activity_id.value = '';
+  form.activity_id.disabled = true;
   form.unit.value = '';
   document.getElementById('factorDetails').innerHTML = '';
   document.getElementById('calcPreview').innerHTML = '';
@@ -294,13 +296,13 @@ async function loadActivitiesForSelectedDepartment(selectedFactorId) {
   try {
     state.availableActivities = await runServer('getActivitiesByDepartment', departmentId);
     if (!state.availableActivities.length) {
-      clearActivitySelection('No activities assigned to this department.');
-      showToast('No activities assigned to this department.', 'warning');
+      clearActivitySelection('No activities assigned to this department. Please set activities in Department Master.');
+      showToast('No activities assigned to this department. Please set activities in Department Master.', 'warning');
       return;
     }
-    form.factor_id.disabled = false;
-    form.factor_id.innerHTML = optionHtml(state.availableActivities, 'factor_id', 'activity_name', 'Select activity');
-    if (selectedFactorId) form.factor_id.value = selectedFactorId;
+    form.activity_id.disabled = false;
+    form.activity_id.innerHTML = optionHtml(state.availableActivities, 'activity_id', 'activity_name', 'Select activity');
+    if (selectedFactorId) form.activity_id.value = selectedFactorId;
     updateFactorDetails();
   } catch (error) {
     clearActivitySelection('Cannot load activities.');
@@ -408,7 +410,7 @@ async function editRecord(recordId) {
   form.department_id.value = record.department_id || '';
   form.amount.value = record.amount || '';
   form.remark.value = record.remark || '';
-  await loadActivitiesForSelectedDepartment(record.factor_id);
+  await loadActivitiesForSelectedDepartment(record.activity_id);
   showToast('Record loaded for editing.', 'info');
 }
 
@@ -453,7 +455,6 @@ async function loadFactors(button) {
             <td><button class="btn-edit" onclick="openFactorModal('${safeText(factor.factor_id)}')">Edit</button> <button class="btn-delete" onclick="deactivateFactor('${safeText(factor.factor_id)}', this)">Deactivate</button></td>
           </tr>`),
         'No emission factors found. Add a factor or import sample emission factors.');
-      populateDepartmentActivityControls();
       if (button) showToast(`Emission factors loaded (${state.factors.length}).`, 'success');
     } catch (error) {
       setTableStatus('factorsTable', 'Cannot load emission factors.', 'error');
@@ -486,7 +487,7 @@ function openFactorModal(factorId) {
         showToast('Factor saved.', 'success');
         await loadLookups();
         await loadFactors();
-        await loadDepartmentActivities();
+        await loadActivities();
       } catch (error) {
         handleError(error, 'Cannot save emission factor.');
       }
@@ -501,7 +502,7 @@ async function deactivateFactor(factorId, button) {
       showToast('Factor deactivated.', 'success');
       await loadLookups();
       await loadFactors();
-      await loadDepartmentActivities();
+      await loadActivities();
     } catch (error) {
       handleError(error, 'Cannot deactivate emission factor.');
     }
@@ -515,7 +516,7 @@ async function importSampleFactors(button) {
       showToast(`${result.imported} sample factors imported.`, 'success');
       await loadLookups();
       await loadFactors();
-      await loadDepartmentActivities();
+      await loadActivities();
     } catch (error) {
       handleError(error, 'Cannot import sample factors.');
     }
@@ -523,73 +524,119 @@ async function importSampleFactors(button) {
 }
 
 
-function populateDepartmentActivityControls() {
-  const departmentSelect = document.getElementById('mapDepartment');
-  const factorSelect = document.getElementById('mapFactor');
-  if (!departmentSelect || !factorSelect) return;
-  const previousDepartment = departmentSelect.value;
-  const previousFactor = factorSelect.value;
-  departmentSelect.innerHTML = optionHtml(activeOnly(state.departments), 'department_id', 'department_name', 'Select department');
-  factorSelect.innerHTML = optionHtml(activeOnly(state.allFactors), 'factor_id', 'activity_name', 'Select activity');
-  departmentSelect.value = previousDepartment;
-  factorSelect.value = previousFactor;
-  departmentSelect.onchange = () => loadDepartmentActivities();
-}
-
-async function loadDepartmentActivities(button) {
+async function loadActivities(button) {
   return withButtonLoading(button, 'Loading...', async () => {
     try {
-      populateDepartmentActivityControls();
-      state.departmentActivities = await runServer('getDepartmentActivities', { includeInactive: true });
-      const selectedDepartmentId = document.getElementById('mapDepartment')?.value || '';
-      const rows = state.departmentActivities.filter(mapping => !selectedDepartmentId || String(mapping.department_id) === String(selectedDepartmentId));
-      renderTable('departmentActivitiesTable', ['Department', 'Activity', 'Active', 'Actions'],
-        rows.map(mapping => `
-          <tr>
-            <td>${safeText(mapping.department_name)}</td><td>${safeText(mapping.activity_name)}</td><td>${safeText(mapping.is_active)}</td>
-            <td><button class="btn-delete" onclick="deactivateDepartmentActivity('${safeText(mapping.department_activity_id)}', this)">Deactivate</button></td>
-          </tr>`),
-        'No activities assigned to this department yet.');
-      if (button) showToast(`Department activity assignments loaded (${rows.length}).`, 'success');
+      const search = document.getElementById('activitySearch')?.value || '';
+      state.activities = await runServer('getActivities', { includeInactive: true, search });
+      renderTable('activitiesTable', ['Activity Name', 'Group', 'Scope', 'Category', 'Unit', 'Default Factor', 'Active', 'Actions'],
+        state.activities.map(activity => {
+          const factor = state.allFactors.find(item => String(item.factor_id) === String(activity.default_factor_id)) || {};
+          return `
+            <tr>
+              <td>${safeText(activity.activity_name)}</td><td>${safeText(activity.activity_group)}</td><td>${safeText(activity.scope)}</td><td>${safeText(activity.category)}</td><td>${safeText(activity.unit)}</td>
+              <td>${safeText(factor.activity_name || activity.default_factor_id)}</td><td>${safeText(activity.is_active)}</td>
+              <td><button class="btn-edit" onclick="openActivityModal('${safeText(activity.activity_id)}')">Edit</button> <button class="btn-delete" onclick="deactivateActivityMaster('${safeText(activity.activity_id)}', this)">Deactivate</button></td>
+            </tr>`;
+        }),
+        'No activities found. Add an activity to assign it to departments.');
+      if (button) showToast(`Activities loaded (${state.activities.length}).`, 'success');
     } catch (error) {
-      setTableStatus('departmentActivitiesTable', 'Cannot load department activity assignments.', 'error');
-      handleError(error, 'Cannot load department activity assignments.');
+      setTableStatus('activitiesTable', 'Cannot load activities.', 'error');
+      handleError(error, 'Cannot load activities.');
     }
   });
 }
 
-async function assignDepartmentActivity(button) {
-  return withButtonLoading(button, 'Assigning...', async () => {
-    const departmentId = document.getElementById('mapDepartment')?.value;
-    const factorId = document.getElementById('mapFactor')?.value;
-    if (!departmentId || !factorId) {
-      showToast('Select both a department and an activity to assign.', 'warning');
-      return;
-    }
-    try {
-      await runServer('saveDepartmentActivity', { department_id: departmentId, factor_id: factorId });
-      showToast('Activity assigned to department.', 'success');
-      await loadDepartmentActivities();
-      const form = document.getElementById('activityForm');
-      if (form.department_id.value === departmentId) await loadActivitiesForSelectedDepartment(form.factor_id.value);
-    } catch (error) {
-      handleError(error, 'Cannot assign activity to department.');
-    }
-  });
+function activityFormHtml(activity = {}) {
+  const factorOptions = optionHtml(activeOnly(state.allFactors), 'factor_id', 'activity_name', 'Select default emission factor');
+  return `
+    <h3>${activity.activity_id ? 'Edit' : 'Add'} Activity</h3>
+    <form id="masterActivityForm" class="form-grid">
+      <input type="hidden" name="activity_id" value="${safeText(activity.activity_id)}">
+      <label>Activity Name<input name="activity_name" value="${safeText(activity.activity_name)}" required></label>
+      <label>Activity Group<input name="activity_group" value="${safeText(activity.activity_group)}"></label>
+      <label>Scope<input name="scope" value="${safeText(activity.scope)}"></label>
+      <label>Category<input name="category" value="${safeText(activity.category)}"></label>
+      <label>Unit<input name="unit" value="${safeText(activity.unit)}" required></label>
+      <label>Default Emission Factor<select name="default_factor_id" required>${factorOptions}</select></label>
+      <label>Active<select name="is_active"><option value="true">true</option><option value="false" ${String(activity.is_active) === 'false' ? 'selected' : ''}>false</option></select></label>
+      <div class="span-2"><button class="btn-save">Save</button> <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button></div>
+    </form>`;
 }
 
-async function deactivateDepartmentActivity(departmentActivityId, button) {
+function openActivityModal(activityId) {
+  const activity = state.activities.find(item => String(item.activity_id) === String(activityId)) || {};
+  document.getElementById('modalContent').innerHTML = activityFormHtml(activity);
+  document.getElementById('modal').classList.remove('hidden');
+  const form = document.getElementById('masterActivityForm');
+  form.default_factor_id.value = activity.default_factor_id || '';
+  form.onsubmit = async event => {
+    event.preventDefault();
+    await withButtonLoading(event.submitter, 'Saving...', async () => {
+      try {
+        await runServer(activityId ? 'updateActivity' : 'saveActivity', Object.fromEntries(new FormData(event.target).entries()));
+        closeModal();
+        showToast('Activity saved.', 'success');
+        await loadLookups();
+        await loadActivities();
+      } catch (error) {
+        handleError(error, 'Cannot save activity.');
+      }
+    });
+  };
+}
+
+async function deactivateActivityMaster(activityId, button) {
   return withButtonLoading(button, 'Deactivating...', async () => {
     try {
-      await runServer('deactivateDepartmentActivity', departmentActivityId);
-      showToast('Department activity assignment deactivated.', 'success');
-      await loadDepartmentActivities();
-      const form = document.getElementById('activityForm');
-      if (form.department_id.value) await loadActivitiesForSelectedDepartment(form.factor_id.value);
+      await runServer('deactivateActivity', activityId);
+      showToast('Activity deactivated.', 'success');
+      await loadLookups();
+      await loadActivities();
     } catch (error) {
-      handleError(error, 'Cannot deactivate department activity assignment.');
+      handleError(error, 'Cannot deactivate activity.');
     }
   });
+}
+
+function openDepartmentActivitiesModal(departmentId) {
+  const department = state.departments.find(item => String(item.department_id) === String(departmentId));
+  if (!department) {
+    showToast('Department not found.', 'warning');
+    return;
+  }
+  runServer('getAssignedActivitiesForDepartment', departmentId).then(assigned => {
+    const assignedMap = (assigned || []).reduce((map, item) => {
+      map[String(item.activity_id)] = true;
+      return map;
+    }, {});
+    const checkboxes = activeOnly(state.activities).map(activity => `
+      <label class="checkbox-row"><input type="checkbox" name="activity_ids" value="${safeText(activity.activity_id)}" ${assignedMap[String(activity.activity_id)] ? 'checked' : ''}> ${safeText(activity.activity_name)}</label>`).join('') || '<p class="muted">No active activities available. Add activities in Activity Master first.</p>';
+    document.getElementById('modalContent').innerHTML = `
+      <h3>Set Activities - ${safeText(department.department_name)}</h3>
+      <form id="departmentActivitiesForm">
+        <div class="checkbox-list">${checkboxes}</div>
+        <div class="actions"><button class="btn-save">Save Activities</button> <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button></div>
+      </form>`;
+    document.getElementById('modal').classList.remove('hidden');
+    document.getElementById('departmentActivitiesForm').onsubmit = async event => {
+      event.preventDefault();
+      await withButtonLoading(event.submitter, 'Saving...', async () => {
+        const selected = Array.from(event.target.querySelectorAll('input[name="activity_ids"]:checked')).map(input => input.value);
+        try {
+          await runServer('saveDepartmentActivityAssignments', departmentId, selected);
+          closeModal();
+          showToast('Department activities saved.', 'success');
+          await loadLookups();
+          const form = document.getElementById('activityForm');
+          if (form.department_id.value === departmentId) await loadActivitiesForSelectedDepartment(form.activity_id.value);
+        } catch (error) {
+          handleError(error, 'Cannot save department activities.');
+        }
+      });
+    };
+  }).catch(error => handleError(error, 'Cannot load assigned department activities.'));
 }
 
 async function loadDepartments(button) {
@@ -600,11 +647,10 @@ async function loadDepartments(button) {
         state.departments.map(department => `
           <tr>
             <td>${safeText(department.department_name)}</td><td>${safeText(department.description)}</td><td>${safeText(department.is_active)}</td>
-            <td><button class="btn-edit" onclick="openDepartmentModal('${safeText(department.department_id)}')">Edit</button> <button class="btn-delete" onclick="deactivateDepartment('${safeText(department.department_id)}', this)">Deactivate</button></td>
+            <td><button class="btn-edit" onclick="openDepartmentModal('${safeText(department.department_id)}')">Edit</button> <button class="btn-secondary" onclick="openDepartmentActivitiesModal('${safeText(department.department_id)}')">Set Activities</button> <button class="btn-delete" onclick="deactivateDepartment('${safeText(department.department_id)}', this)">Deactivate</button></td>
           </tr>`),
         'No departments found. Add a department to start entering activity records.');
       buildFilters();
-      populateDepartmentActivityControls();
       if (button) showToast(`Departments loaded (${state.departments.length}).`, 'success');
     } catch (error) {
       setTableStatus('departmentsTable', 'Cannot load departments.', 'error');
@@ -634,7 +680,7 @@ function openDepartmentModal(departmentId) {
         showToast('Department saved.', 'success');
         await loadLookups();
         await loadDepartments();
-        await loadDepartmentActivities();
+        await loadActivities();
       } catch (error) {
         handleError(error, 'Cannot save department.');
       }
@@ -649,7 +695,7 @@ async function deactivateDepartment(departmentId, button) {
       showToast('Department deactivated.', 'success');
       await loadLookups();
       await loadDepartments();
-      await loadDepartmentActivities();
+      await loadActivities();
     } catch (error) {
       handleError(error, 'Cannot deactivate department.');
     }

@@ -53,7 +53,7 @@ function sanitizeForClient_(value) {
 
 function buildActivityRecordPayload_(data, existing) {
   data = data || {};
-  requireFields_(data, ['year', 'month', 'department_id', 'factor_id', 'amount']);
+  requireFields_(data, ['year', 'month', 'department_id', 'activity_id', 'amount']);
   const amount = Number(data.amount);
   if (!Number.isFinite(amount) || amount < 0) throw new Error('Amount must be numeric and greater than or equal to 0.');
 
@@ -61,9 +61,11 @@ function buildActivityRecordPayload_(data, existing) {
   const department = departments.find(function(item) { return String(item.department_id) === String(data.department_id); });
   if (!department) throw new Error('Department not found.');
 
-  const allowedFactors = getActivitiesByDepartment(department.department_id);
-  const factor = allowedFactors.find(function(item) { return String(item.factor_id) === String(data.factor_id); });
-  if (!factor) throw new Error('Selected activity is not assigned to this department or is inactive.');
+  const allowedActivities = getActivitiesByDepartment(department.department_id);
+  const activityWithFactor = allowedActivities.find(function(item) { return String(item.activity_id) === String(data.activity_id); });
+  if (!activityWithFactor) throw new Error('Selected activity is not assigned to this department or is inactive.');
+  const factor = getFactorById(activityWithFactor.factor_id);
+  if (!toBoolean_(factor.is_active)) throw new Error('Selected activity default emission factor is inactive.');
 
   const totalFactor = toNumber_(factor.total_co2e_factor);
   const kgco2e = amount * totalFactor;
@@ -76,15 +78,16 @@ function buildActivityRecordPayload_(data, existing) {
     period: makePeriod_(data.year, data.month),
     department_id: department.department_id,
     department_name: department.department_name,
+    activity_id: activityWithFactor.activity_id,
+    activity_name: activityWithFactor.activity_name,
+    activity_group: activityWithFactor.activity_group,
+    scope: activityWithFactor.scope,
+    category: activityWithFactor.category,
+    unit: activityWithFactor.unit,
     factor_id: factor.factor_id,
-    activity_name: factor.activity_name,
-    activity_group: factor.activity_group,
-    scope: factor.scope,
-    category: factor.category,
-    unit: factor.unit,
     amount: amount,
     snapshot_total_co2e_factor: totalFactor,
-    snapshot_total_co2e_unit: factor.total_co2e_unit || 'kg CO2e/' + (factor.unit || 'unit'),
+    snapshot_total_co2e_unit: factor.total_co2e_unit || 'kg CO2e/' + (activityWithFactor.unit || 'unit'),
     emission_kgco2e: kgco2e,
     emission_tco2e: kgco2e / 1000,
     factor_source: factor.factor_source,
@@ -139,13 +142,13 @@ function duplicateActivityRecord(recordId, overrides) {
 
 function duplicateLastMonth(data) {
   data = data || {};
-  requireFields_(data, ['year', 'month', 'department_id', 'factor_id']);
+  requireFields_(data, ['year', 'month', 'department_id', 'activity_id']);
   const targetPeriod = makePeriod_(data.year, data.month);
   let sourceYear = Number(data.year);
   let sourceMonth = Number(data.month) - 1;
   if (sourceMonth < 1) { sourceMonth = 12; sourceYear -= 1; }
   const sourcePeriod = makePeriod_(sourceYear, sourceMonth);
-  const records = getActivityRecords({ department_id: data.department_id, factor_id: data.factor_id });
+  const records = getActivityRecords({ department_id: data.department_id, activity_id: data.activity_id });
   const source = records.find(function(row) { return row.period === sourcePeriod; });
   if (!source) throw new Error('No matching last-month record found for ' + sourcePeriod + '.');
   return duplicateActivityRecord(source.record_id, { year: Number(data.year), month: Number(data.month), period: targetPeriod });

@@ -54,3 +54,11 @@ function deactivateEmissionFactor(factorId) {
   updateObjectRow_(found.sheet, found.rowNumber, { is_active: false, updated_at: nowIso_() });
   return { success: true };
 }
+
+function getFactorById(factorId) {
+  const factor = getEmissionFactors({ includeInactive: true }).find(function(item) {
+    return String(item.factor_id) === String(factorId);
+  });
+  if (!factor) throw new Error('Emission factor not found: ' + factorId);
+  return factor;
+}
