@@ -1,0 +1,765 @@
+<script>
+const state = {
+  departments: [],
+  factors: [],
+  allFactors: [],
+  activities: [],
+  availableActivities: [],
+  departmentActivities: [],
+  records: [],
+  charts: {},
+  reportFilters: {}
+};
+
+const months = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0'));
+
+function runServer(functionName, ...args) {
+  console.debug(`[GAS] Calling ${functionName}`, args);
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(result => {
+        console.debug(`[GAS] ${functionName} succeeded`, result);
+        resolve(result);
+      })
+      .withFailureHandler(error => {
+        console.error(`[GAS] ${functionName} failed`, error);
+        reject(error);
+      })[functionName](...args);
+  });
+}
+
+function showToast(message, type = 'info') {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = `toast ${type}`;
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => toast.classList.add('hidden'), type === 'error' ? 6500 : 3500);
+}
+
+function getErrorMessage(error, fallback = 'An unexpected error occurred.') {
+  return (error && (error.message || error.toString())) || fallback;
+}
+
+function handleError(error, userMessage) {
+  console.error(userMessage, error);
+  showToast(`${userMessage} ${getErrorMessage(error)}`, 'error');
+}
+
+function setButtonLoading(button, isLoading, loadingText) {
+  if (!button) return;
+  if (isLoading) {
+    if (button.disabled) return;
+    button.dataset.originalText = button.textContent;
+    button.textContent = loadingText || 'Loading...';
+    button.classList.add('loading');
+    button.disabled = true;
+  } else {
+    button.disabled = false;
+    button.classList.remove('loading');
+    if (button.dataset.originalText) {
+      button.textContent = button.dataset.originalText;
+      delete button.dataset.originalText;
+    }
+  }
+}
+
+async function withButtonLoading(button, loadingText, action) {
+  if (button && button.disabled) return undefined;
+  setButtonLoading(button, true, loadingText);
+  try {
+    return await action();
+  } finally {
+    setButtonLoading(button, false);
+  }
+}
+
+function formatNumber(value, digits = 3) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number.toLocaleString(undefined, { maximumFractionDigits: digits }) : '';
+}
+
+function safeText(value) {
+  return value === null || value === undefined ? '' : String(value);
+}
+
+function isActive(item) {
+  return String(item.is_active).toLowerCase() !== 'false';
+}
+
+function activeOnly(items) {
+  return items.filter(isActive);
+}
+
+function optionHtml(items, valueKey, labelKey, blankLabel = 'All') {
+  return `<option value="">${blankLabel}</option>` + items.map(item => (
+    `<option value="${safeText(item[valueKey])}">${safeText(item[labelKey])}</option>`
+  )).join('');
+}
+
+function monthOptions(blankLabel = 'All') {
+  return `<option value="">${blankLabel}</option>` + months.map(month => `<option value="${month}">${month}</option>`).join('');
+}
+
+function buildFilterHtml(prefix, extraHtml = '') {
+  const handler = prefix === 'dash' ? 'loadDashboard' : prefix === 'rec' ? 'loadRecords' : 'loadReport';
+  return `
+    <label>Year<input id="${prefix}Year" type="number" placeholder="Year"></label>
+    <label>Month<select id="${prefix}Month">${monthOptions()}</select></label>
+    <label>Department<select id="${prefix}Dept">${optionHtml(activeOnly(state.departments), 'department_id', 'department_name')}</select></label>
+    <label>Scope<select id="${prefix}Scope"><option value="">All</option><option>Scope 1</option><option>Scope 2</option><option>Scope 3</option></select></label>
+    ${extraHtml}
+    <button class="btn-primary" onclick="${handler}(this)">Apply</button>`;
+}
+
+function getFilters(prefix) {
+  return {
+    year: document.getElementById(prefix + 'Year')?.value,
+    month: document.getElementById(prefix + 'Month')?.value,
+    department_id: document.getElementById(prefix + 'Dept')?.value,
+    scope: document.getElementById(prefix + 'Scope')?.value,
+    category: document.getElementById(prefix + 'Category')?.value,
+    activity_name: document.getElementById(prefix + 'Activity')?.value
+  };
+}
+
+function extractActivityRecordsResponse(response) {
+  console.log('Raw getActivityRecords response:', response);
+  console.log('Raw getActivityRecords response is array:', Array.isArray(response));
+  if (Array.isArray(response)) {
+    console.log('Activity Records received:', response.length);
+    return response;
+  }
+
+  if (response && Array.isArray(response.data)) {
+    console.warn('getActivityRecords returned a legacy {data: [...]} wrapper. Please redeploy the backend so getActivityRecords returns an array directly.', response);
+    console.log('Activity Records received:', response.data.length);
+    return response.data;
+  }
+
+  if (response && Array.isArray(response.records)) {
+    console.warn('getActivityRecords returned a legacy {records: [...]} wrapper. Please redeploy the backend so getActivityRecords returns an array directly.', response);
+    console.log('Activity Records received:', response.records.length);
+    return response.records;
+  }
+
+  console.error('Invalid getActivityRecords response:', response);
+  throw new Error('Backend getActivityRecords returned invalid data. Expected an array, received: ' + describeResponseShape(response));
+}
+
+function describeResponseShape(response) {
+  if (response === null) return 'null';
+  if (response === undefined) return 'undefined';
+  if (Array.isArray(response)) return 'array';
+  if (typeof response === 'object') return 'object with keys [' + Object.keys(response).join(', ') + ']';
+  return typeof response;
+}
+
+function setTableStatus(tableId, message, type = 'info') {
+  document.getElementById(tableId).innerHTML = `<tbody><tr><td><div class="table-status ${type}">${message}</div></td></tr></tbody>`;
+}
+
+function renderTable(tableId, headers, rows, emptyMessage) {
+  const table = document.getElementById(tableId);
+  if (!rows || rows.length === 0) {
+    table.innerHTML = `<tbody><tr><td colspan="${headers.length}"><div class="table-status">${emptyMessage || 'No data found.'}</div></td></tr></tbody>`;
+    return;
+  }
+  table.innerHTML = `
+    <thead><tr>${headers.map(header => `<th>${header}</th>`).join('')}</tr></thead>
+    <tbody>${rows.join('')}</tbody>`;
+}
+
+function renderChart(canvasId, type, labels, data, label) {
+  if (state.charts[canvasId]) state.charts[canvasId].destroy();
+  state.charts[canvasId] = new Chart(document.getElementById(canvasId), {
+    type,
+    data: {
+      labels,
+      datasets: [{
+        label,
+        data,
+        backgroundColor: ['#166534', '#2563eb', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2'],
+        borderColor: '#166534',
+        tension: 0.25
+      }]
+    },
+    options: { responsive: true, plugins: { legend: { display: type !== 'bar' && type !== 'line' } } }
+  });
+}
+
+async function initializeApp() {
+  document.querySelectorAll('.nav').forEach(button => {
+    button.onclick = () => showPage(button.dataset.page);
+  });
+  document.getElementById('setupBtn').onclick = event => withButtonLoading(event.currentTarget, 'Setting up...', async () => {
+    await runServer('setupDatabase');
+    showToast('Database setup completed.', 'success');
+    await loadLookups();
+    buildFilters();
+    initializeActivityForm();
+    await loadAllPages();
+  });
+
+  await runServer('setupDatabase');
+  await loadLookups();
+  buildFilters();
+  initializeActivityForm();
+  await loadAllPages();
+}
+
+function showPage(pageId) {
+  document.querySelectorAll('.page, .nav').forEach(element => element.classList.remove('active'));
+  document.getElementById(pageId).classList.add('active');
+  document.querySelector(`[data-page="${pageId}"]`).classList.add('active');
+}
+
+async function loadLookups() {
+  state.departments = await runServer('getDepartments', { includeInactive: true });
+  state.allFactors = await runServer('getEmissionFactors', { includeInactive: true });
+  state.factors = state.allFactors;
+  state.activities = await runServer('getActivities', { includeInactive: true });
+  state.departmentActivities = await runServer('getDepartmentActivities', { includeInactive: true });
+}
+
+function buildFilters() {
+  document.getElementById('dashboardFilters').innerHTML = buildFilterHtml('dash');
+  document.getElementById('recordFilters').innerHTML = buildFilterHtml('rec', `
+    <label>Activity<input id="recActivity" placeholder="Activity"></label>
+    <label>Category<input id="recCategory" placeholder="Category"></label>`);
+  document.getElementById('reportFilters').innerHTML = buildFilterHtml('rep', `
+    <label>Category<input id="repCategory" placeholder="Category"></label>`);
+}
+
+async function loadAllPages() {
+  await Promise.allSettled([loadDashboard(), loadRecords(), loadFactors(), loadActivities(), loadDepartments()]);
+}
+
+async function loadDashboard(button) {
+  return withButtonLoading(button, 'Loading...', async () => {
+    try {
+      const data = await runServer('getDashboardData', getFilters('dash'));
+      document.getElementById('summaryCards').innerHTML = [
+        ['Total tCO2e', data.total_tco2e],
+        ['Scope 1 tCO2e', data.scope1_tco2e],
+        ['Scope 2 tCO2e', data.scope2_tco2e],
+        ['Scope 3 tCO2e', data.scope3_tco2e],
+        ['Top Department', data.top_department.label, formatNumber(data.top_department.value)],
+        ['Top Activity', data.top_activity.label, formatNumber(data.top_activity.value)]
+      ].map(card => `
+        <div class="card"><div class="muted">${card[0]}</div><div class="metric">${typeof card[1] === 'number' ? formatNumber(card[1]) : safeText(card[1])}</div>${card[2] ? `<div class="muted">${card[2]} tCO2e</div>` : ''}</div>`).join('');
+      renderChart('monthlyChart', 'line', data.monthly_trend.map(item => item.label), data.monthly_trend.map(item => item.value), 'Monthly trend');
+      renderChart('scopeChart', 'doughnut', data.by_scope.map(item => item.label), data.by_scope.map(item => item.value), 'By scope');
+      renderChart('deptChart', 'bar', data.by_department.map(item => item.label), data.by_department.map(item => item.value), 'By department');
+      renderChart('activityChart', 'bar', data.by_activity.map(item => item.label), data.by_activity.map(item => item.value), 'By activity');
+      renderChart('topChart', 'bar', data.top_sources.map(item => item.label), data.top_sources.map(item => item.value), 'Top 5');
+      if (button) showToast('Dashboard refreshed.', 'success');
+    } catch (error) {
+      handleError(error, 'Cannot load dashboard.');
+    }
+  });
+}
+
+function initializeActivityForm() {
+  const form = document.getElementById('activityForm');
+  form.year.value = form.year.value || new Date().getFullYear();
+  form.month.innerHTML = months.map(month => `<option value="${month}">${month}</option>`).join('');
+  form.month.value = form.month.value || String(new Date().getMonth() + 1).padStart(2, '0');
+  form.department_id.innerHTML = optionHtml(activeOnly(state.departments), 'department_id', 'department_name', 'Select department');
+  form.department_id.onchange = () => loadActivitiesForSelectedDepartment();
+  form.activity_id.onchange = updateFactorDetails;
+  form.amount.oninput = updateFactorDetails;
+  form.onsubmit = saveActivityFromForm;
+  clearActivitySelection('Select a department first.');
+}
+
+function selectedFactor() {
+  const form = document.getElementById('activityForm');
+  return state.availableActivities.find(activity => String(activity.activity_id) === form.activity_id.value) || {};
+}
+
+function clearActivitySelection(message) {
+  const form = document.getElementById('activityForm');
+  state.availableActivities = [];
+  form.activity_id.innerHTML = `<option value="">${message || 'Select activity'}</option>`;
+  form.activity_id.value = '';
+  form.activity_id.disabled = true;
+  form.unit.value = '';
+  document.getElementById('factorDetails').innerHTML = '';
+  document.getElementById('calcPreview').innerHTML = '';
+}
+
+async function loadActivitiesForSelectedDepartment(selectedFactorId) {
+  const form = document.getElementById('activityForm');
+  const departmentId = form.department_id.value;
+  clearActivitySelection(departmentId ? 'Loading activities...' : 'Select a department first.');
+  if (!departmentId) return;
+  try {
+    state.availableActivities = await runServer('getActivitiesByDepartment', departmentId);
+    if (!state.availableActivities.length) {
+      clearActivitySelection('No activities assigned to this department. Please set activities in Department Master.');
+      showToast('No activities assigned to this department. Please set activities in Department Master.', 'warning');
+      return;
+    }
+    form.activity_id.disabled = false;
+    form.activity_id.innerHTML = optionHtml(state.availableActivities, 'activity_id', 'activity_name', 'Select activity');
+    if (selectedFactorId) form.activity_id.value = selectedFactorId;
+    updateFactorDetails();
+  } catch (error) {
+    clearActivitySelection('Cannot load activities.');
+    handleError(error, 'Cannot load activities for selected department.');
+  }
+}
+
+function updateFactorDetails() {
+  const form = document.getElementById('activityForm');
+  const factor = selectedFactor();
+  form.unit.value = factor.unit || '';
+  const detailFields = ['group', 'scope', 'category', 'unit', 'factor_id', 'factor_name', 'total_co2e_factor', 'total_co2e_unit', 'factor_source', 'factor_year', 'gwp_version'];
+  document.getElementById('factorDetails').innerHTML = detailFields.map(key => `<div><b>${key.replaceAll('_', ' ')}</b><br>${safeText(factor[key])}</div>`).join('');
+  const amount = Number(form.amount.value || 0);
+  const totalFactor = Number(factor.total_co2e_factor || 0);
+  const kgco2e = amount * totalFactor;
+  document.getElementById('calcPreview').innerHTML = [
+    ['Snapshot Total CO2e Factor', totalFactor],
+    ['Snapshot Total CO2e Unit', factor.total_co2e_unit || ''],
+    ['Emission kgCO2e', kgco2e],
+    ['Emission tCO2e', kgco2e / 1000]
+  ].map(item => `<div><b>${item[0]}</b><br>${typeof item[1] === 'number' ? formatNumber(item[1]) : safeText(item[1])}</div>`).join('');
+}
+
+async function saveActivityFromForm(event) {
+  event.preventDefault();
+  const button = event.submitter;
+  await withButtonLoading(button, 'Saving...', async () => {
+    const data = Object.fromEntries(new FormData(event.target).entries());
+    try {
+      await runServer(data.record_id ? 'updateActivityRecord' : 'saveActivityRecord', data);
+      showToast('Activity record saved.', 'success');
+      clearActivityForm();
+      await loadRecords();
+      await loadDashboard();
+    } catch (error) {
+      handleError(error, 'Cannot save activity record.');
+    }
+  });
+}
+
+function clearActivityForm() {
+  const form = document.getElementById('activityForm');
+  form.reset();
+  form.record_id.value = '';
+  form.year.value = new Date().getFullYear();
+  form.month.value = String(new Date().getMonth() + 1).padStart(2, '0');
+  form.department_id.value = '';
+  clearActivitySelection('Select a department first.');
+  showToast('Form cleared.', 'info');
+}
+
+async function duplicateLastMonthFromForm(button) {
+  return withButtonLoading(button, 'Duplicating...', async () => {
+    const form = document.getElementById('activityForm');
+    try {
+      await runServer('duplicateLastMonth', Object.fromEntries(new FormData(form).entries()));
+      showToast('Last-month record duplicated.', 'success');
+      await loadRecords();
+      await loadDashboard();
+    } catch (error) {
+      handleError(error, 'Cannot duplicate last-month record.');
+    }
+  });
+}
+
+async function loadRecords(button) {
+  return withButtonLoading(button, 'Loading...', async () => {
+    console.debug('Loading Activity Records with filters', getFilters('rec'));
+    setTableStatus('recordsTable', 'Loading Activity Records...', 'info');
+    try {
+      const response = await runServer('getActivityRecords', getFilters('rec'));
+      const records = extractActivityRecordsResponse(response);
+      state.records = records;
+      console.debug('Activity Records loaded for rendering', records);
+      renderTable('recordsTable', ['Period', 'Department', 'Activity Name', 'Scope', 'Category', 'Amount', 'Unit', 'Emission tCO2e', 'Factor Source', 'Remark', 'Actions'],
+        records.map(record => `
+          <tr>
+            <td>${safeText(record.period)}</td><td>${safeText(record.department_name)}</td><td>${safeText(record.activity_name)}</td>
+            <td>${safeText(record.scope)}</td><td>${safeText(record.category)}</td><td>${formatNumber(record.amount)}</td>
+            <td>${safeText(record.unit)}</td><td>${formatNumber(record.emission_tco2e)}</td><td>${safeText(record.factor_source)}</td><td>${safeText(record.remark)}</td>
+            <td><button class="btn-edit" onclick="editRecord('${safeText(record.record_id)}')">Edit</button> <button class="btn-secondary" onclick="duplicateRecord('${safeText(record.record_id)}', this)">Duplicate</button> <button class="btn-delete" onclick="deleteRecord('${safeText(record.record_id)}', this)">Delete</button></td>
+          </tr>`),
+        'No activity records found. Add an activity record or adjust the filters.');
+      if (button) showToast(`Activity Records loaded (${records.length}).`, records.length ? 'success' : 'info');
+    } catch (error) {
+      state.records = [];
+      setTableStatus('recordsTable', 'Cannot load Activity Records. Please check that the Activity_Records sheet exists and headers are correct.', 'error');
+      handleError(error, 'Cannot load Activity Records.');
+    }
+  });
+}
+
+async function editRecord(recordId) {
+  const record = state.records.find(item => String(item.record_id) === String(recordId));
+  if (!record) {
+    showToast('Cannot edit record because it is not loaded in the table.', 'warning');
+    return;
+  }
+  const form = document.getElementById('activityForm');
+  showPage('add-record');
+  form.record_id.value = record.record_id || '';
+  form.year.value = record.year || new Date().getFullYear();
+  form.month.value = String(record.month || '').padStart(2, '0');
+  form.department_id.value = record.department_id || '';
+  form.amount.value = record.amount || '';
+  form.remark.value = record.remark || '';
+  await loadActivitiesForSelectedDepartment(record.activity_id);
+  showToast('Record loaded for editing.', 'info');
+}
+
+async function duplicateRecord(recordId, button) {
+  return withButtonLoading(button, 'Duplicating...', async () => {
+    try {
+      await runServer('duplicateActivityRecord', recordId, {});
+      showToast('Record duplicated.', 'success');
+      await loadRecords();
+      await loadDashboard();
+    } catch (error) {
+      handleError(error, 'Cannot duplicate record.');
+    }
+  });
+}
+
+async function deleteRecord(recordId, button) {
+  if (!confirm('Delete this record?')) return;
+  return withButtonLoading(button, 'Deleting...', async () => {
+    try {
+      await runServer('deleteActivityRecord', recordId);
+      showToast('Record deleted.', 'success');
+      await loadRecords();
+      await loadDashboard();
+    } catch (error) {
+      handleError(error, 'Cannot delete record.');
+    }
+  });
+}
+
+async function loadFactors(button) {
+  return withButtonLoading(button, 'Loading...', async () => {
+    try {
+      const search = document.getElementById('factorSearch')?.value || '';
+      state.factors = await runServer('getEmissionFactors', { includeInactive: true, search });
+      renderTable('factorsTable', ['Factor Name', 'CO2 Factor', 'Fossil CH4 Factor', 'CH4 Factor', 'N2O Factor', 'Total CO2e Factor', 'Total CO2e Unit', 'Factor Source', 'Factor Year', 'GWP Version', 'Active', 'Actions'],
+        state.factors.map(factor => `
+          <tr>
+            <td>${safeText(factor.factor_name)}</td><td>${safeText(factor.co2_factor)}</td><td>${safeText(factor.fossil_ch4_factor)}</td><td>${safeText(factor.ch4_factor)}</td><td>${safeText(factor.n2o_factor)}</td>
+            <td>${safeText(factor.total_co2e_factor)}</td><td>${safeText(factor.total_co2e_unit)}</td><td>${safeText(factor.factor_source)}</td><td>${safeText(factor.factor_year)}</td><td>${safeText(factor.gwp_version)}</td><td>${safeText(factor.is_active)}</td>
+            <td><button class="btn-edit" onclick="openFactorModal('${safeText(factor.factor_id)}')">Edit</button> <button class="btn-delete" onclick="deactivateFactor('${safeText(factor.factor_id)}', this)">Deactivate</button></td>
+          </tr>`),
+        'No emission factors found. Add a factor or import sample emission factors.');
+      if (button) showToast(`Emission factors loaded (${state.factors.length}).`, 'success');
+    } catch (error) {
+      setTableStatus('factorsTable', 'Cannot load emission factors.', 'error');
+      handleError(error, 'Cannot load emission factors.');
+    }
+  });
+}
+
+function factorFormHtml(factor = {}) {
+  const fields = ['factor_id', 'factor_name', 'co2_factor', 'fossil_ch4_factor', 'ch4_factor', 'n2o_factor', 'total_co2e_factor', 'total_co2e_unit', 'factor_source', 'factor_year', 'gwp_version'];
+  return `
+    <h3>${factor.factor_id ? 'Edit' : 'Add'} Emission Factor</h3>
+    <form id="factorForm" class="form-grid">
+      ${fields.map(key => `<label>${key.replaceAll('_', ' ')}<input name="${key}" value="${safeText(factor[key])}" ${key === 'factor_id' ? 'readonly' : ''}></label>`).join('')}
+      <label>Active<select name="is_active"><option value="true">true</option><option value="false" ${String(factor.is_active) === 'false' ? 'selected' : ''}>false</option></select></label>
+      <div class="span-2"><button class="btn-save">Save</button> <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button></div>
+    </form>`;
+}
+
+function openFactorModal(factorId) {
+  const factor = state.allFactors.find(item => String(item.factor_id) === String(factorId)) || state.factors.find(item => String(item.factor_id) === String(factorId)) || {};
+  document.getElementById('modalContent').innerHTML = factorFormHtml(factor);
+  document.getElementById('modal').classList.remove('hidden');
+  document.getElementById('factorForm').onsubmit = async event => {
+    event.preventDefault();
+    await withButtonLoading(event.submitter, 'Saving...', async () => {
+      try {
+        await runServer(factorId ? 'updateEmissionFactor' : 'saveEmissionFactor', Object.fromEntries(new FormData(event.target).entries()));
+        closeModal();
+        showToast('Factor saved.', 'success');
+        await loadLookups();
+        await loadFactors();
+        await loadActivities();
+      } catch (error) {
+        handleError(error, 'Cannot save emission factor.');
+      }
+    });
+  };
+}
+
+async function deactivateFactor(factorId, button) {
+  return withButtonLoading(button, 'Deactivating...', async () => {
+    try {
+      await runServer('deactivateEmissionFactor', factorId);
+      showToast('Factor deactivated.', 'success');
+      await loadLookups();
+      await loadFactors();
+      await loadActivities();
+    } catch (error) {
+      handleError(error, 'Cannot deactivate emission factor.');
+    }
+  });
+}
+
+async function importSampleFactors(button) {
+  return withButtonLoading(button, 'Importing...', async () => {
+    try {
+      const result = await runServer('importSampleEmissionFactors');
+      showToast(`${result.imported} sample factors imported.`, 'success');
+      await loadLookups();
+      await loadFactors();
+      await loadActivities();
+    } catch (error) {
+      handleError(error, 'Cannot import sample factors.');
+    }
+  });
+}
+
+
+async function loadActivities(button) {
+  return withButtonLoading(button, 'Loading...', async () => {
+    try {
+      const search = document.getElementById('activitySearch')?.value || '';
+      state.activities = await runServer('getActivities', { includeInactive: true, search });
+      renderTable('activitiesTable', ['Activity Name', 'Group', 'Scope', 'Category', 'Unit', 'Default Factor', 'Active', 'Actions'],
+        state.activities.map(activity => {
+          const factor = state.allFactors.find(item => String(item.factor_id) === String(activity.default_factor_id)) || {};
+          return `
+            <tr>
+              <td>${safeText(activity.activity_name)}</td><td>${safeText(activity.group)}</td><td>${safeText(activity.scope)}</td><td>${safeText(activity.category)}</td><td>${safeText(activity.unit)}</td>
+              <td>${safeText(factor.factor_name || activity.default_factor_id)}</td><td>${safeText(activity.is_active)}</td>
+              <td><button class="btn-edit" onclick="openActivityModal('${safeText(activity.activity_id)}')">Edit</button> <button class="btn-delete" onclick="deactivateActivityMaster('${safeText(activity.activity_id)}', this)">Deactivate</button></td>
+            </tr>`;
+        }),
+        'No activities found. Add an activity to assign it to departments.');
+      if (button) showToast(`Activities loaded (${state.activities.length}).`, 'success');
+    } catch (error) {
+      setTableStatus('activitiesTable', 'Cannot load activities.', 'error');
+      handleError(error, 'Cannot load activities.');
+    }
+  });
+}
+
+function activityFormHtml(activity = {}) {
+  const factorOptions = optionHtml(activeOnly(state.allFactors), 'factor_id', 'factor_name', 'Select default emission factor');
+  return `
+    <h3>${activity.activity_id ? 'Edit' : 'Add'} Activity</h3>
+    <form id="masterActivityForm" class="form-grid">
+      <input type="hidden" name="activity_id" value="${safeText(activity.activity_id)}">
+      <label>Activity Name<input name="activity_name" value="${safeText(activity.activity_name)}" required></label>
+      <label>Group<input name="group" value="${safeText(activity.group)}"></label>
+      <label>Scope<input name="scope" value="${safeText(activity.scope)}"></label>
+      <label>Category<input name="category" value="${safeText(activity.category)}"></label>
+      <label>Unit<input name="unit" value="${safeText(activity.unit)}" required></label>
+      <label>Default Emission Factor<select name="default_factor_id" required>${factorOptions}</select></label>
+      <label>Active<select name="is_active"><option value="true">true</option><option value="false" ${String(activity.is_active) === 'false' ? 'selected' : ''}>false</option></select></label>
+      <div class="span-2"><button class="btn-save">Save</button> <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button></div>
+    </form>`;
+}
+
+function openActivityModal(activityId) {
+  const activity = state.activities.find(item => String(item.activity_id) === String(activityId)) || {};
+  document.getElementById('modalContent').innerHTML = activityFormHtml(activity);
+  document.getElementById('modal').classList.remove('hidden');
+  const form = document.getElementById('masterActivityForm');
+  form.default_factor_id.value = activity.default_factor_id || '';
+  form.onsubmit = async event => {
+    event.preventDefault();
+    await withButtonLoading(event.submitter, 'Saving...', async () => {
+      try {
+        await runServer(activityId ? 'updateActivity' : 'saveActivity', Object.fromEntries(new FormData(event.target).entries()));
+        closeModal();
+        showToast('Activity saved.', 'success');
+        await loadLookups();
+        await loadActivities();
+      } catch (error) {
+        handleError(error, 'Cannot save activity.');
+      }
+    });
+  };
+}
+
+async function deactivateActivityMaster(activityId, button) {
+  return withButtonLoading(button, 'Deactivating...', async () => {
+    try {
+      await runServer('deactivateActivity', activityId);
+      showToast('Activity deactivated.', 'success');
+      await loadLookups();
+      await loadActivities();
+    } catch (error) {
+      handleError(error, 'Cannot deactivate activity.');
+    }
+  });
+}
+
+function openDepartmentActivitiesModal(departmentId) {
+  const department = state.departments.find(item => String(item.department_id) === String(departmentId));
+  if (!department) {
+    showToast('Department not found.', 'warning');
+    return;
+  }
+  runServer('getAssignedActivitiesForDepartment', departmentId).then(assigned => {
+    const assignedMap = (assigned || []).reduce((map, item) => {
+      map[String(item.activity_id)] = true;
+      return map;
+    }, {});
+    const checkboxes = activeOnly(state.activities).map(activity => `
+      <label class="checkbox-row"><input type="checkbox" name="activity_ids" value="${safeText(activity.activity_id)}" ${assignedMap[String(activity.activity_id)] ? 'checked' : ''}> ${safeText(activity.activity_name)}</label>`).join('') || '<p class="muted">No active activities available. Add activities in Activity Master first.</p>';
+    document.getElementById('modalContent').innerHTML = `
+      <h3>Set Activities - ${safeText(department.department_name)}</h3>
+      <form id="departmentActivitiesForm">
+        <div class="checkbox-list">${checkboxes}</div>
+        <div class="actions"><button class="btn-save">Save Activities</button> <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button></div>
+      </form>`;
+    document.getElementById('modal').classList.remove('hidden');
+    document.getElementById('departmentActivitiesForm').onsubmit = async event => {
+      event.preventDefault();
+      await withButtonLoading(event.submitter, 'Saving...', async () => {
+        const selected = Array.from(event.target.querySelectorAll('input[name="activity_ids"]:checked')).map(input => input.value);
+        try {
+          await runServer('saveDepartmentActivityAssignments', departmentId, selected);
+          closeModal();
+          showToast('Department activities saved.', 'success');
+          await loadLookups();
+          const form = document.getElementById('activityForm');
+          if (form.department_id.value === departmentId) await loadActivitiesForSelectedDepartment(form.activity_id.value);
+        } catch (error) {
+          handleError(error, 'Cannot save department activities.');
+        }
+      });
+    };
+  }).catch(error => handleError(error, 'Cannot load assigned department activities.'));
+}
+
+async function loadDepartments(button) {
+  return withButtonLoading(button, 'Loading...', async () => {
+    try {
+      state.departments = await runServer('getDepartments', { includeInactive: true });
+      renderTable('departmentsTable', ['Department Name', 'Description', 'Active', 'Actions'],
+        state.departments.map(department => `
+          <tr>
+            <td>${safeText(department.department_name)}</td><td>${safeText(department.description)}</td><td>${safeText(department.is_active)}</td>
+            <td><button class="btn-edit" onclick="openDepartmentModal('${safeText(department.department_id)}')">Edit</button> <button class="btn-secondary" onclick="openDepartmentActivitiesModal('${safeText(department.department_id)}')">Set Activities</button> <button class="btn-delete" onclick="deactivateDepartment('${safeText(department.department_id)}', this)">Deactivate</button></td>
+          </tr>`),
+        'No departments found. Add a department to start entering activity records.');
+      buildFilters();
+      if (button) showToast(`Departments loaded (${state.departments.length}).`, 'success');
+    } catch (error) {
+      setTableStatus('departmentsTable', 'Cannot load departments.', 'error');
+      handleError(error, 'Cannot load departments.');
+    }
+  });
+}
+
+function openDepartmentModal(departmentId) {
+  const department = state.departments.find(item => String(item.department_id) === String(departmentId)) || {};
+  document.getElementById('modalContent').innerHTML = `
+    <h3>${departmentId ? 'Edit' : 'Add'} Department</h3>
+    <form id="departmentForm" class="form-grid">
+      <input type="hidden" name="department_id" value="${safeText(department.department_id)}">
+      <label>Department Name<input name="department_name" value="${safeText(department.department_name)}" required></label>
+      <label>Description<input name="description" value="${safeText(department.description)}"></label>
+      <label>Active<select name="is_active"><option value="true">true</option><option value="false" ${String(department.is_active) === 'false' ? 'selected' : ''}>false</option></select></label>
+      <div class="span-2"><button class="btn-save">Save</button> <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button></div>
+    </form>`;
+  document.getElementById('modal').classList.remove('hidden');
+  document.getElementById('departmentForm').onsubmit = async event => {
+    event.preventDefault();
+    await withButtonLoading(event.submitter, 'Saving...', async () => {
+      try {
+        await runServer(departmentId ? 'updateDepartment' : 'saveDepartment', Object.fromEntries(new FormData(event.target).entries()));
+        closeModal();
+        showToast('Department saved.', 'success');
+        await loadLookups();
+        await loadDepartments();
+        await loadActivities();
+      } catch (error) {
+        handleError(error, 'Cannot save department.');
+      }
+    });
+  };
+}
+
+async function deactivateDepartment(departmentId, button) {
+  return withButtonLoading(button, 'Deactivating...', async () => {
+    try {
+      await runServer('deactivateDepartment', departmentId);
+      showToast('Department deactivated.', 'success');
+      await loadLookups();
+      await loadDepartments();
+      await loadActivities();
+    } catch (error) {
+      handleError(error, 'Cannot deactivate department.');
+    }
+  });
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+}
+
+async function loadReport(button) {
+  return withButtonLoading(button, 'Generating...', async () => {
+    try {
+      state.reportFilters = getFilters('rep');
+      const data = await runServer('getReportData', state.reportFilters);
+      document.getElementById('reportOutput').innerHTML = `
+        <h2>${safeText(data.company.company_name)} Carbon Footprint Report</h2>
+        <p><b>Site:</b> ${safeText(data.company.site_name)} <b>Prepared by:</b> ${safeText(data.company.prepared_by)}</p>
+        <h3>Reporting period</h3>
+        <p>Year ${state.reportFilters.year || 'All'}, Month ${state.reportFilters.month || 'All'}</p>
+        <h3>Total emission summary</h3>
+        <div class="cards"><div class="card"><div class="metric">${formatNumber(data.summary.total_tco2e)}</div><div class="muted">Total tCO2e</div></div></div>
+        ${reportSection('Emission by Scope', data.summary.by_scope)}
+        ${reportSection('Emission by Department', data.summary.by_department)}
+        ${reportSection('Emission by Activity', data.summary.by_activity)}
+        ${reportSection('Monthly trend', data.summary.monthly_trend)}
+        <h3>Detailed activity records</h3>
+        <div class="table-wrap"><table><tr><th>Period</th><th>Department</th><th>Activity</th><th>Scope</th><th>Amount</th><th>Snapshot Factor</th><th>kgCO2e</th><th>tCO2e</th></tr>
+          ${data.records.map(record => `<tr><td>${safeText(record.period)}</td><td>${safeText(record.department_name)}</td><td>${safeText(record.activity_name)}</td><td>${safeText(record.scope)}</td><td>${formatNumber(record.amount)} ${safeText(record.unit)}</td><td>${safeText(record.snapshot_total_co2e_factor)} ${safeText(record.snapshot_total_co2e_unit)}</td><td>${formatNumber(record.emission_kgco2e)}</td><td>${formatNumber(record.emission_tco2e)}</td></tr>`).join('')}
+        </table></div>
+        <h3>Emission factor reference</h3>
+        <div class="table-wrap"><table><tr><th>Factor Name</th><th>CO2</th><th>Fossil CH4</th><th>CH4</th><th>N2O</th><th>Total CO2e Factor</th><th>Source</th><th>Year</th><th>GWP</th></tr>
+          ${data.factors.map(factor => `<tr><td>${safeText(factor.factor_name)}</td><td>${safeText(factor.co2_factor)}</td><td>${safeText(factor.fossil_ch4_factor)}</td><td>${safeText(factor.ch4_factor)}</td><td>${safeText(factor.n2o_factor)}</td><td>${safeText(factor.total_co2e_factor)} ${safeText(factor.total_co2e_unit)}</td><td>${safeText(factor.factor_source)}</td><td>${safeText(factor.factor_year)}</td><td>${safeText(factor.gwp_version)}</td></tr>`).join('')}
+        </table></div>`;
+      showToast('Report generated.', 'success');
+    } catch (error) {
+      handleError(error, 'Cannot generate report.');
+    }
+  });
+}
+
+function reportSection(title, items) {
+  return `
+    <h3>${title}</h3>
+    <div class="table-wrap"><table><tr><th>Name</th><th>tCO2e</th></tr>
+      ${(items || []).map(item => `<tr><td>${safeText(item.label)}</td><td>${formatNumber(item.value)}</td></tr>`).join('')}
+    </table></div>`;
+}
+
+async function exportCsv(button) {
+  return withButtonLoading(button, 'Exporting...', async () => {
+    try {
+      const csv = await runServer('exportRecordsCsv', state.reportFilters || getFilters('rep'));
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'carbon_activity_records.csv';
+      link.click();
+      URL.revokeObjectURL(link.href);
+      showToast('CSV exported.', 'success');
+    } catch (error) {
+      handleError(error, 'Cannot export CSV.');
+    }
+  });
+}
+
+window.addEventListener('load', () => initializeApp().catch(error => handleError(error, 'Cannot initialize app.')));
+</script>
