@@ -78,6 +78,19 @@ function getHeaderMap_(sheet) {
   }, {});
 }
 
+function validateSheetHeaders_(sheet, expectedHeaders) {
+  const actualHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), expectedHeaders.length)).getValues()[0]
+    .slice(0, expectedHeaders.length);
+  const missing = expectedHeaders.filter(function(header) { return actualHeaders.indexOf(header) === -1; });
+  const mismatched = expectedHeaders.filter(function(header, index) { return actualHeaders[index] !== header; });
+  if (missing.length || mismatched.length || sheet.getLastColumn() < expectedHeaders.length) {
+    const message = 'Sheet ' + sheet.getName() + ' headers are incorrect. Expected: ' + expectedHeaders.join(', ') + '. Actual: ' + actualHeaders.join(', ');
+    Logger.log(message);
+    throw new Error(message);
+  }
+  return true;
+}
+
 function sheetRowsToObjects_(sheet) {
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) return [];

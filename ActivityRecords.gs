@@ -1,6 +1,23 @@
 function getActivityRecords(filters) {
-  return applyRecordFilters_(sheetRowsToObjects_(getSheet_(SHEET_NAMES.RECORDS)), filters)
-    .sort(function(a, b) { return String(b.period).localeCompare(String(a.period)) || String(a.department_name).localeCompare(String(b.department_name)); });
+  Logger.log('getActivityRecords called with filters: ' + JSON.stringify(filters || {}));
+  try {
+    const sheet = getSheet_(SHEET_NAMES.RECORDS);
+    validateSheetHeaders_(sheet, HEADERS.Activity_Records);
+    Logger.log('Reading Activity_Records from sheet: ' + sheet.getName() + ', lastRow=' + sheet.getLastRow() + ', lastColumn=' + sheet.getLastColumn());
+
+    const rows = sheetRowsToObjects_(sheet);
+    Logger.log('Activity_Records raw non-empty row count: ' + rows.length);
+
+    const filteredRows = applyRecordFilters_(rows, filters);
+    Logger.log('Activity_Records filtered row count: ' + filteredRows.length);
+
+    return filteredRows.sort(function(a, b) {
+      return String(b.period).localeCompare(String(a.period)) || String(a.department_name).localeCompare(String(b.department_name));
+    });
+  } catch (error) {
+    Logger.log('Cannot load Activity_Records: ' + error.message + '\n' + (error.stack || ''));
+    throw new Error('Cannot load Activity Records. Please check that the Activity_Records sheet exists and headers are correct. Technical details: ' + error.message);
+  }
 }
 
 function buildActivityRecordPayload_(data, existing) {
@@ -51,6 +68,7 @@ function buildActivityRecordPayload_(data, existing) {
 function saveActivityRecord(data) {
   const payload = buildActivityRecordPayload_(data);
   appendObjectRow_(getSheet_(SHEET_NAMES.RECORDS), payload);
+  Logger.log('Saved Activity_Records record_id=' + payload.record_id + ', period=' + payload.period + ', emission_tco2e=' + payload.emission_tco2e);
   return payload;
 }
 
@@ -60,12 +78,14 @@ function updateActivityRecord(data) {
   const found = findRowById_(SHEET_NAMES.RECORDS, 'record_id', data.record_id);
   const payload = buildActivityRecordPayload_(data, found.row);
   updateObjectRow_(found.sheet, found.rowNumber, payload);
+  Logger.log('Updated Activity_Records record_id=' + payload.record_id + ', row=' + found.rowNumber);
   return payload;
 }
 
 function deleteActivityRecord(recordId) {
   const found = findRowById_(SHEET_NAMES.RECORDS, 'record_id', recordId);
   found.sheet.deleteRow(found.rowNumber);
+  Logger.log('Deleted Activity_Records record_id=' + recordId + ', row=' + found.rowNumber);
   return { success: true };
 }
 
@@ -81,7 +101,9 @@ function duplicateActivityRecord(recordId, overrides) {
     next.year = year;
     next.month = month;
   }
-  return saveActivityRecord(next);
+  const duplicated = saveActivityRecord(next);
+  Logger.log('Duplicated Activity_Records source=' + recordId + ', new=' + duplicated.record_id);
+  return duplicated;
 }
 
 function duplicateLastMonth(data) {

@@ -20,17 +20,17 @@ function setupDatabase() {
 
 function ensureSheetHeaders_(sheet, headers) {
   const lastColumn = Math.max(sheet.getLastColumn(), headers.length);
-  const existingHeaders = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, lastColumn).getValues()[0].filter(function(header) { return header !== ''; }) : [];
-  if (existingHeaders.join('|') === headers.join('|') && sheet.getLastColumn() === headers.length) {
+  const existingHeaders = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, lastColumn).getValues()[0] : [];
+  const firstHeaders = existingHeaders.slice(0, headers.length);
+  if (firstHeaders.join('|') === headers.join('|')) {
     sheet.setFrozenRows(1);
     return;
   }
 
   const existingRows = sheet.getLastRow() > 1 ? sheetRowsToObjectsWithoutSetup_(sheet) : [];
   const migratedRows = existingRows.map(function(row) { return migrateRowForHeaders_(row, headers); });
-  sheet.clearContents();
   if (sheet.getMaxColumns() < headers.length) sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
-  if (sheet.getMaxColumns() > headers.length) sheet.deleteColumns(headers.length + 1, sheet.getMaxColumns() - headers.length);
+  sheet.getRange(1, 1, Math.max(sheet.getLastRow(), 1), headers.length).clearContent();
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   if (migratedRows.length) {
     sheet.getRange(2, 1, migratedRows.length, headers.length).setValues(migratedRows.map(function(row) {

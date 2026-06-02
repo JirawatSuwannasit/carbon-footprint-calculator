@@ -146,6 +146,13 @@ The MVP includes sample factors for:
 
 These are sample placeholder factors only. Replace them with your company's approved factor sources before using the calculator for official reporting.
 
+
+## Troubleshooting Activity Records
+
+If the Activity Records page is empty, first confirm the `Activity_Records` sheet exists and that the first columns match the expected headers in `Utils.gs`. The web app now shows an empty-state message when no records match the filters and a clear error toast/table message when the backend cannot read the sheet. Technical details are also written to the browser console and Apps Script `Logger` from `getActivityRecords()`.
+
+Button actions now show loading text, disable during processing to prevent double submissions, and display success/error notifications after completion.
+
 ## CSV export
 
 The Report page's **Export CSV** button exports filtered `Activity_Records` data as a comma-separated file that can be opened in Excel or other spreadsheet tools.

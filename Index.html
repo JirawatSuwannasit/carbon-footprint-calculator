@@ -15,13 +15,13 @@
     <button class="nav" data-page="factors">Emission Factors</button>
     <button class="nav" data-page="departments">Departments</button>
     <button class="nav" data-page="report">Report</button>
-    <button id="setupBtn" class="secondary full">Setup Database</button>
+    <button id="setupBtn" class="btn-secondary full">Setup Database</button>
   </aside>
 
   <main class="content">
     <div id="toast" class="toast hidden"></div>
     <section id="dashboard" class="page active">
-      <div class="page-header"><h2>Dashboard</h2><button onclick="loadDashboard()">Refresh</button></div>
+      <div class="page-header"><h2>Dashboard</h2><button class="btn-primary" onclick="loadDashboard(this)">Refresh</button></div>
       <div class="filters" id="dashboardFilters"></div>
       <div class="cards" id="summaryCards"></div>
       <div class="charts">
@@ -42,36 +42,36 @@
         <label class="span-2">Remark<textarea name="remark"></textarea></label>
         <div class="span-2 details" id="factorDetails"></div>
         <div class="span-2 preview" id="calcPreview"></div>
-        <div class="span-2 actions"><button type="submit">Save Record</button><button type="button" class="secondary" onclick="clearActivityForm()">Clear Form</button><button type="button" class="secondary" onclick="duplicateLastMonthFromForm()">Duplicate Last Month</button></div>
+        <div class="span-2 actions"><button type="submit" class="btn-save">Save Record</button><button type="button" class="btn-cancel" onclick="clearActivityForm()">Clear Form</button><button type="button" class="btn-secondary" onclick="duplicateLastMonthFromForm(this)">Duplicate Last Month</button></div>
       </form>
     </section>
 
     <section id="records" class="page">
-      <div class="page-header"><h2>Activity Records</h2><button onclick="loadRecords()">Refresh</button></div>
+      <div class="page-header"><h2>Activity Records</h2><button class="btn-primary" onclick="loadRecords(this)">Refresh</button></div>
       <div class="filters" id="recordFilters"></div>
       <div class="table-wrap"><table id="recordsTable"></table></div>
     </section>
 
     <section id="factors" class="page">
-      <div class="page-header"><h2>Emission Factor Master</h2><button onclick="openFactorModal()">Add Factor</button></div>
-      <div class="filters"><input id="factorSearch" placeholder="Search factors"><button onclick="loadFactors()">Search</button><button class="secondary" onclick="importSampleFactors()">Import sample emission factors</button></div>
+      <div class="page-header"><h2>Emission Factor Master</h2><button class="btn-primary" onclick="openFactorModal()">Add Factor</button></div>
+      <div class="filters"><input id="factorSearch" placeholder="Search factors"><button class="btn-primary" onclick="loadFactors(this)">Search</button><button class="btn-secondary" onclick="importSampleFactors(this)">Import sample emission factors</button></div>
       <div class="table-wrap"><table id="factorsTable"></table></div>
     </section>
 
     <section id="departments" class="page">
-      <div class="page-header"><h2>Department Master</h2><button onclick="openDepartmentModal()">Add Department</button></div>
+      <div class="page-header"><h2>Department Master</h2><button class="btn-primary" onclick="openDepartmentModal()">Add Department</button></div>
       <div class="table-wrap"><table id="departmentsTable"></table></div>
     </section>
 
     <section id="report" class="page">
       <div class="page-header"><h2>Printable Report</h2></div>
       <div class="filters" id="reportFilters"></div>
-      <div class="actions"><button onclick="loadReport()">Generate Report</button><button class="secondary" onclick="window.print()">Print Report</button><button class="secondary" onclick="exportCsv()">Export CSV</button></div>
+      <div class="actions"><button class="btn-primary" onclick="loadReport(this)">Generate Report</button><button class="btn-secondary" onclick="window.print()">Print Report</button><button class="btn-secondary" onclick="exportCsv(this)">Export CSV</button></div>
       <div id="reportOutput" class="report-paper"></div>
     </section>
   </main>
 
-  <div id="modal" class="modal hidden"><div class="modal-card"><button class="close" onclick="closeModal()">×</button><div id="modalContent"></div></div></div>
+  <div id="modal" class="modal hidden"><div class="modal-card"><button class="close btn-cancel" onclick="closeModal()">×</button><div id="modalContent"></div></div></div>
   <?!= include('Scripts'); ?>
 </body>
 </html>
