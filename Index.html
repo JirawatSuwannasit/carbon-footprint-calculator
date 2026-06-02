@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <?!= include('Styles'); ?>
+</head>
+<body>
+  <aside class="sidebar">
+    <h1>Carbon Calculator</h1>
+    <button class="nav active" data-page="dashboard">Dashboard</button>
+    <button class="nav" data-page="add-record">Add Activity</button>
+    <button class="nav" data-page="records">Activity Records</button>
+    <button class="nav" data-page="factors">Emission Factors</button>
+    <button class="nav" data-page="departments">Departments</button>
+    <button class="nav" data-page="report">Report</button>
+    <button id="setupBtn" class="btn-secondary full">Setup Database</button>
+  </aside>
+
+  <main class="content">
+    <div id="toast" class="toast hidden"></div>
+    <section id="dashboard" class="page active">
+      <div class="page-header"><h2>Dashboard</h2><button class="btn-primary" onclick="loadDashboard(this)">Refresh</button></div>
+      <div class="filters" id="dashboardFilters"></div>
+      <div class="cards" id="summaryCards"></div>
+      <div class="charts">
+        <canvas id="monthlyChart"></canvas><canvas id="scopeChart"></canvas><canvas id="deptChart"></canvas><canvas id="activityChart"></canvas><canvas id="topChart"></canvas>
+      </div>
+    </section>
+
+    <section id="add-record" class="page">
+      <div class="page-header"><h2>Add Activity Record</h2></div>
+      <form id="activityForm" class="card form-grid">
+        <input type="hidden" name="record_id">
+        <label>Year<input name="year" type="number" required></label>
+        <label>Month<select name="month" required></select></label>
+        <label>Department<select name="department_id" required></select></label>
+        <label>Activity Name<select name="factor_id" required></select></label>
+        <label>Amount<input name="amount" type="number" step="0.0001" min="0" required></label>
+        <label>Unit<input name="unit" disabled></label>
+        <label class="span-2">Remark<textarea name="remark"></textarea></label>
+        <div class="span-2 details" id="factorDetails"></div>
+        <div class="span-2 preview" id="calcPreview"></div>
+        <div class="span-2 actions"><button type="submit" class="btn-save">Save Record</button><button type="button" class="btn-cancel" onclick="clearActivityForm()">Clear Form</button><button type="button" class="btn-secondary" onclick="duplicateLastMonthFromForm(this)">Duplicate Last Month</button></div>
+      </form>
+    </section>
+
+    <section id="records" class="page">
+      <div class="page-header"><h2>Activity Records</h2><button class="btn-primary" onclick="loadRecords(this)">Refresh</button></div>
+      <div class="filters" id="recordFilters"></div>
+      <div class="table-wrap"><table id="recordsTable"></table></div>
+    </section>
+
+    <section id="factors" class="page">
+      <div class="page-header"><h2>Emission Factor Master</h2><button class="btn-primary" onclick="openFactorModal()">Add Factor</button></div>
+      <div class="filters"><input id="factorSearch" placeholder="Search factors"><button class="btn-primary" onclick="loadFactors(this)">Search</button><button class="btn-secondary" onclick="importSampleFactors(this)">Import sample emission factors</button></div>
+      <div class="table-wrap"><table id="factorsTable"></table></div>
+    </section>
+
+    <section id="departments" class="page">
+      <div class="page-header"><h2>Department Master</h2><button class="btn-primary" onclick="openDepartmentModal()">Add Department</button></div>
+      <div class="table-wrap"><table id="departmentsTable"></table></div>
+    </section>
+
+    <section id="report" class="page">
+      <div class="page-header"><h2>Printable Report</h2></div>
+      <div class="filters" id="reportFilters"></div>
+      <div class="actions"><button class="btn-primary" onclick="loadReport(this)">Generate Report</button><button class="btn-secondary" onclick="window.print()">Print Report</button><button class="btn-secondary" onclick="exportCsv(this)">Export CSV</button></div>
+      <div id="reportOutput" class="report-paper"></div>
+    </section>
+  </main>
+
+  <div id="modal" class="modal hidden"><div class="modal-card"><button class="close btn-cancel" onclick="closeModal()">×</button><div id="modalContent"></div></div></div>
+  <?!= include('Scripts'); ?>
+</body>
+</html>
