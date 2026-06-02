@@ -10,10 +10,10 @@ const SHEET_NAMES = {
 const HEADERS = {
   Company_Settings: ['company_id', 'company_name', 'site_name', 'report_year', 'base_year', 'prepared_by', 'created_at', 'updated_at'],
   Departments: ['department_id', 'department_name', 'description', 'is_active', 'created_at', 'updated_at'],
-  Emission_Factors: ['factor_id', 'activity_name', 'activity_group', 'scope', 'category', 'unit', 'co2_factor', 'fossil_ch4_factor', 'ch4_factor', 'n2o_factor', 'total_co2e_factor', 'total_co2e_unit', 'factor_source', 'factor_year', 'gwp_version', 'is_active', 'created_at', 'updated_at'],
-  Activity_Master: ['activity_id', 'activity_name', 'activity_group', 'scope', 'category', 'unit', 'default_factor_id', 'is_active', 'created_at', 'updated_at'],
+  Emission_Factors: ['factor_id', 'factor_name', 'co2_factor', 'fossil_ch4_factor', 'ch4_factor', 'n2o_factor', 'total_co2e_factor', 'total_co2e_unit', 'factor_source', 'factor_year', 'gwp_version', 'is_active', 'created_at', 'updated_at'],
+  Activity_Master: ['activity_id', 'activity_name', 'group', 'scope', 'category', 'unit', 'default_factor_id', 'is_active', 'created_at', 'updated_at'],
   Department_Activities: ['department_activity_id', 'department_id', 'department_name', 'activity_id', 'activity_name', 'is_active', 'created_at', 'updated_at'],
-  Activity_Records: ['record_id', 'year', 'month', 'period', 'department_id', 'department_name', 'activity_id', 'activity_name', 'activity_group', 'scope', 'category', 'unit', 'factor_id', 'amount', 'snapshot_total_co2e_factor', 'snapshot_total_co2e_unit', 'emission_kgco2e', 'emission_tco2e', 'factor_source', 'factor_year', 'gwp_version', 'remark', 'created_at', 'updated_at']
+  Activity_Records: ['record_id', 'year', 'month', 'period', 'department_id', 'department_name', 'activity_id', 'activity_name', 'group', 'scope', 'category', 'unit', 'factor_id', 'factor_name', 'amount', 'snapshot_total_co2e_factor', 'snapshot_total_co2e_unit', 'emission_kgco2e', 'emission_tco2e', 'factor_source', 'factor_year', 'gwp_version', 'remark', 'created_at', 'updated_at']
 };
 
 function include(filename) {

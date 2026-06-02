@@ -9,7 +9,7 @@ A simple Google Apps Script web application that uses Google Sheets as the datab
 - Chart.js charts for monthly trends, scope, department, activity, and top sources
 - Add/edit/delete/duplicate activity records
 - Automatic total CO2e factor snapshotting when a record is saved
-- Gas factor references retained in the emission factor master, with activity records storing kgCO2e and tCO2e
+- Emission factor values retained in the emission factor master, with activity records storing activity snapshots, factor snapshots, kgCO2e, and tCO2e
 - Department master with add/edit/deactivate actions
 - Emission factor master with add/edit/deactivate and sample factor import
 - Activity master with default emission factors and department assignment controls
@@ -42,7 +42,7 @@ When an activity record is saved, the app:
    - `emission_kgco2e = amount × snapshot_total_co2e_factor`
    - `emission_tco2e = emission_kgco2e / 1000`
 
-CO2, Fossil CH4, CH4, and N2O factors are stored only in `Emission_Factors` for reference. `Department_Activities` maps departments to `Activity_Master` rows by `activity_id`, not directly to factor rows. Existing activity records are not recalculated when an activity or factor changes unless the user edits that record.
+`Activity_Master` stores business fields (`activity_name`, `group`, `scope`, `category`, and `unit`). `Emission_Factors` stores factor values and reference metadata only. `Department_Activities` maps departments to `Activity_Master` rows by `activity_id`, not directly to factor rows. Existing activity records are not recalculated when an activity or factor changes unless the user edits that record.
 
 ## Project files
 
@@ -157,8 +157,8 @@ These are sample placeholder factors only. Replace them with your company's appr
 
 The app uses this architecture: `Departments → Department_Activities → Activity_Master → Emission_Factors`.
 
-- `Emission_Factors` stores calculation factors only.
-- `Activity_Master` stores business activities and each activity's `default_factor_id`.
+- `Emission_Factors` stores factor values and reference metadata only (`factor_name`, gas factors, total CO2e factor/unit, source/year/GWP).
+- `Activity_Master` stores business activities (`activity_name`, `group`, `scope`, `category`, `unit`) and each activity's `default_factor_id`.
 - `Department_Activities` maps departments to activities by `activity_id`; it does not store `factor_id`.
 
 The Add Activity Record form disables the Activity Name dropdown until a department is selected, then loads only active assigned activities through `getActivitiesByDepartment(departmentId)`. If no active activities are assigned, the form shows "No activities assigned to this department. Please set activities in Department Master."

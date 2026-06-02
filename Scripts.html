@@ -314,7 +314,7 @@ function updateFactorDetails() {
   const form = document.getElementById('activityForm');
   const factor = selectedFactor();
   form.unit.value = factor.unit || '';
-  const detailFields = ['activity_group', 'scope', 'category', 'unit', 'co2_factor', 'fossil_ch4_factor', 'ch4_factor', 'n2o_factor', 'total_co2e_factor', 'total_co2e_unit', 'factor_source', 'factor_year', 'gwp_version'];
+  const detailFields = ['group', 'scope', 'category', 'unit', 'factor_id', 'factor_name', 'total_co2e_factor', 'total_co2e_unit', 'factor_source', 'factor_year', 'gwp_version'];
   document.getElementById('factorDetails').innerHTML = detailFields.map(key => `<div><b>${key.replaceAll('_', ' ')}</b><br>${safeText(factor[key])}</div>`).join('');
   const amount = Number(form.amount.value || 0);
   const totalFactor = Number(factor.total_co2e_factor || 0);
@@ -446,11 +446,10 @@ async function loadFactors(button) {
     try {
       const search = document.getElementById('factorSearch')?.value || '';
       state.factors = await runServer('getEmissionFactors', { includeInactive: true, search });
-      renderTable('factorsTable', ['Activity Name', 'Activity Group', 'Scope', 'Category', 'Unit', 'CO2 Factor', 'Fossil CH4 Factor', 'CH4 Factor', 'N2O Factor', 'Total CO2e Factor', 'Total CO2e Unit', 'Factor Source', 'Factor Year', 'GWP Version', 'Active', 'Actions'],
+      renderTable('factorsTable', ['Factor Name', 'CO2 Factor', 'Fossil CH4 Factor', 'CH4 Factor', 'N2O Factor', 'Total CO2e Factor', 'Total CO2e Unit', 'Factor Source', 'Factor Year', 'GWP Version', 'Active', 'Actions'],
         state.factors.map(factor => `
           <tr>
-            <td>${safeText(factor.activity_name)}</td><td>${safeText(factor.activity_group)}</td><td>${safeText(factor.scope)}</td><td>${safeText(factor.category)}</td><td>${safeText(factor.unit)}</td>
-            <td>${safeText(factor.co2_factor)}</td><td>${safeText(factor.fossil_ch4_factor)}</td><td>${safeText(factor.ch4_factor)}</td><td>${safeText(factor.n2o_factor)}</td>
+            <td>${safeText(factor.factor_name)}</td><td>${safeText(factor.co2_factor)}</td><td>${safeText(factor.fossil_ch4_factor)}</td><td>${safeText(factor.ch4_factor)}</td><td>${safeText(factor.n2o_factor)}</td>
             <td>${safeText(factor.total_co2e_factor)}</td><td>${safeText(factor.total_co2e_unit)}</td><td>${safeText(factor.factor_source)}</td><td>${safeText(factor.factor_year)}</td><td>${safeText(factor.gwp_version)}</td><td>${safeText(factor.is_active)}</td>
             <td><button class="btn-edit" onclick="openFactorModal('${safeText(factor.factor_id)}')">Edit</button> <button class="btn-delete" onclick="deactivateFactor('${safeText(factor.factor_id)}', this)">Deactivate</button></td>
           </tr>`),
@@ -464,7 +463,7 @@ async function loadFactors(button) {
 }
 
 function factorFormHtml(factor = {}) {
-  const fields = ['factor_id', 'activity_name', 'activity_group', 'scope', 'category', 'unit', 'co2_factor', 'fossil_ch4_factor', 'ch4_factor', 'n2o_factor', 'total_co2e_factor', 'total_co2e_unit', 'factor_source', 'factor_year', 'gwp_version'];
+  const fields = ['factor_id', 'factor_name', 'co2_factor', 'fossil_ch4_factor', 'ch4_factor', 'n2o_factor', 'total_co2e_factor', 'total_co2e_unit', 'factor_source', 'factor_year', 'gwp_version'];
   return `
     <h3>${factor.factor_id ? 'Edit' : 'Add'} Emission Factor</h3>
     <form id="factorForm" class="form-grid">
@@ -534,8 +533,8 @@ async function loadActivities(button) {
           const factor = state.allFactors.find(item => String(item.factor_id) === String(activity.default_factor_id)) || {};
           return `
             <tr>
-              <td>${safeText(activity.activity_name)}</td><td>${safeText(activity.activity_group)}</td><td>${safeText(activity.scope)}</td><td>${safeText(activity.category)}</td><td>${safeText(activity.unit)}</td>
-              <td>${safeText(factor.activity_name || activity.default_factor_id)}</td><td>${safeText(activity.is_active)}</td>
+              <td>${safeText(activity.activity_name)}</td><td>${safeText(activity.group)}</td><td>${safeText(activity.scope)}</td><td>${safeText(activity.category)}</td><td>${safeText(activity.unit)}</td>
+              <td>${safeText(factor.factor_name || activity.default_factor_id)}</td><td>${safeText(activity.is_active)}</td>
               <td><button class="btn-edit" onclick="openActivityModal('${safeText(activity.activity_id)}')">Edit</button> <button class="btn-delete" onclick="deactivateActivityMaster('${safeText(activity.activity_id)}', this)">Deactivate</button></td>
             </tr>`;
         }),
@@ -549,13 +548,13 @@ async function loadActivities(button) {
 }
 
 function activityFormHtml(activity = {}) {
-  const factorOptions = optionHtml(activeOnly(state.allFactors), 'factor_id', 'activity_name', 'Select default emission factor');
+  const factorOptions = optionHtml(activeOnly(state.allFactors), 'factor_id', 'factor_name', 'Select default emission factor');
   return `
     <h3>${activity.activity_id ? 'Edit' : 'Add'} Activity</h3>
     <form id="masterActivityForm" class="form-grid">
       <input type="hidden" name="activity_id" value="${safeText(activity.activity_id)}">
       <label>Activity Name<input name="activity_name" value="${safeText(activity.activity_name)}" required></label>
-      <label>Activity Group<input name="activity_group" value="${safeText(activity.activity_group)}"></label>
+      <label>Group<input name="group" value="${safeText(activity.group)}"></label>
       <label>Scope<input name="scope" value="${safeText(activity.scope)}"></label>
       <label>Category<input name="category" value="${safeText(activity.category)}"></label>
       <label>Unit<input name="unit" value="${safeText(activity.unit)}" required></label>
@@ -727,8 +726,8 @@ async function loadReport(button) {
           ${data.records.map(record => `<tr><td>${safeText(record.period)}</td><td>${safeText(record.department_name)}</td><td>${safeText(record.activity_name)}</td><td>${safeText(record.scope)}</td><td>${formatNumber(record.amount)} ${safeText(record.unit)}</td><td>${safeText(record.snapshot_total_co2e_factor)} ${safeText(record.snapshot_total_co2e_unit)}</td><td>${formatNumber(record.emission_kgco2e)}</td><td>${formatNumber(record.emission_tco2e)}</td></tr>`).join('')}
         </table></div>
         <h3>Emission factor reference</h3>
-        <div class="table-wrap"><table><tr><th>Activity</th><th>CO2</th><th>Fossil CH4</th><th>CH4</th><th>N2O</th><th>Total CO2e Factor</th><th>Source</th><th>Year</th><th>GWP</th></tr>
-          ${data.factors.map(factor => `<tr><td>${safeText(factor.activity_name)}</td><td>${safeText(factor.co2_factor)}</td><td>${safeText(factor.fossil_ch4_factor)}</td><td>${safeText(factor.ch4_factor)}</td><td>${safeText(factor.n2o_factor)}</td><td>${safeText(factor.total_co2e_factor)} ${safeText(factor.total_co2e_unit)}</td><td>${safeText(factor.factor_source)}</td><td>${safeText(factor.factor_year)}</td><td>${safeText(factor.gwp_version)}</td></tr>`).join('')}
+        <div class="table-wrap"><table><tr><th>Factor Name</th><th>CO2</th><th>Fossil CH4</th><th>CH4</th><th>N2O</th><th>Total CO2e Factor</th><th>Source</th><th>Year</th><th>GWP</th></tr>
+          ${data.factors.map(factor => `<tr><td>${safeText(factor.factor_name)}</td><td>${safeText(factor.co2_factor)}</td><td>${safeText(factor.fossil_ch4_factor)}</td><td>${safeText(factor.ch4_factor)}</td><td>${safeText(factor.n2o_factor)}</td><td>${safeText(factor.total_co2e_factor)} ${safeText(factor.total_co2e_unit)}</td><td>${safeText(factor.factor_source)}</td><td>${safeText(factor.factor_year)}</td><td>${safeText(factor.gwp_version)}</td></tr>`).join('')}
         </table></div>`;
       showToast('Report generated.', 'success');
     } catch (error) {

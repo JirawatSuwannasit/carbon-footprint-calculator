@@ -3,7 +3,7 @@ function getActivities(options) {
   const term = String(options.search || '').toLowerCase();
   return sheetRowsToObjects_(getSheet_(SHEET_NAMES.ACTIVITIES)).filter(function(row) {
     const activeMatch = options.includeInactive || toBoolean_(row.is_active);
-    const termMatch = !term || [row.activity_name, row.activity_group, row.scope, row.category, row.unit].join(' ').toLowerCase().indexOf(term) !== -1;
+    const termMatch = !term || [row.activity_name, row.group, row.scope, row.category, row.unit].join(' ').toLowerCase().indexOf(term) !== -1;
     return activeMatch && termMatch;
   }).sort(function(a, b) { return String(a.activity_name).localeCompare(String(b.activity_name)); });
 }
@@ -17,10 +17,10 @@ function buildActivityPayload_(data, existing) {
   return {
     activity_id: data.activity_id || generateId_('A'),
     activity_name: String(data.activity_name).trim(),
-    activity_group: data.activity_group || factor.activity_group || '',
-    scope: data.scope || factor.scope || '',
-    category: data.category || factor.category || '',
-    unit: data.unit || factor.unit || '',
+    group: data.group || '',
+    scope: data.scope || '',
+    category: data.category || '',
+    unit: data.unit || '',
     default_factor_id: factor.factor_id,
     is_active: data.is_active === undefined ? true : toBoolean_(data.is_active),
     created_at: existing ? existing.created_at : now,

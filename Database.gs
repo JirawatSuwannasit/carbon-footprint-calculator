@@ -60,6 +60,12 @@ function sheetRowsToObjectsWithoutSetup_(sheet) {
 function migrateRowForHeaders_(row, headers) {
   const migrated = {};
   headers.forEach(function(header) { migrated[header] = row[header] !== undefined ? row[header] : ''; });
+  if (headers.indexOf('factor_name') !== -1 && !migrated.factor_name) {
+    migrated.factor_name = row.factor_name || row.activity_name || '';
+  }
+  if (headers.indexOf('group') !== -1 && !migrated.group) {
+    migrated.group = row.group || row['activity_' + 'group'] || '';
+  }
   if (headers.indexOf('activity_id') !== -1 && !migrated.activity_id && row.activity_name) {
     migrated.activity_id = row.activity_id || '';
   }
@@ -131,18 +137,26 @@ function seedEmissionFactors_() {
 function seedActivities_() {
   const sheet = getSpreadsheet_().getSheetByName(SHEET_NAMES.ACTIVITIES);
   if (sheet.getLastRow() > 1) return;
-  getEmissionFactors({ includeInactive: true }).forEach(function(factor) {
-    saveActivity({
-      activity_name: factor.activity_name,
-      activity_group: factor.activity_group,
-      scope: factor.scope,
-      category: factor.category,
-      unit: factor.unit,
-      default_factor_id: factor.factor_id,
-      is_active: true
-    });
+  const factorsByName = getEmissionFactors({ includeInactive: true }).reduce(function(map, factor) {
+    map[String(factor.factor_name).toLowerCase()] = factor;
+    return map;
+  }, {});
+  getSampleActivities_().forEach(function(activity) {
+    const factor = factorsByName[String(activity.default_factor_name).toLowerCase()];
+    if (factor) {
+      saveActivity({
+        activity_name: activity.activity_name,
+        group: activity.group,
+        scope: activity.scope,
+        category: activity.category,
+        unit: activity.unit,
+        default_factor_id: factor.factor_id,
+        is_active: true
+      });
+    }
   });
 }
+
 
 function seedDepartmentActivities_() {
   const sheet = getSpreadsheet_().getSheetByName(SHEET_NAMES.DEPARTMENT_ACTIVITIES);
@@ -179,19 +193,30 @@ function seedDepartmentActivities_() {
 
 function getSampleEmissionFactors_() {
   return [
-    { activity_name: 'Diesel Fuel Combustion', activity_group: 'Stationary Fuel', scope: 'Scope 1', category: 'Fuel combustion', unit: 'liter', co2_factor: 2.68, fossil_ch4_factor: 0, ch4_factor: 0.0001, n2o_factor: 0.00006, total_co2e_factor: 2.71, factor_source: 'Sample internal factor', factor_year: 2025, gwp_version: 'AR6' },
-    { activity_name: 'Gasoline Fuel Combustion', activity_group: 'Mobile Fuel', scope: 'Scope 1', category: 'Company vehicles', unit: 'liter', co2_factor: 2.31, fossil_ch4_factor: 0, ch4_factor: 0.0002, n2o_factor: 0.00005, total_co2e_factor: 2.34, factor_source: 'Sample internal factor', factor_year: 2025, gwp_version: 'AR6' },
-    { activity_name: 'Purchased Electricity', activity_group: 'Electricity', scope: 'Scope 2', category: 'Location-based electricity', unit: 'kWh', co2_factor: 0, fossil_ch4_factor: 0, ch4_factor: 0, n2o_factor: 0, total_co2e_factor: 0.45, factor_source: 'Sample grid factor', factor_year: 2025, gwp_version: 'AR6' },
-    { activity_name: 'Business Air Travel', activity_group: 'Business Travel', scope: 'Scope 3', category: 'Air travel', unit: 'passenger-km', co2_factor: 0, fossil_ch4_factor: 0, ch4_factor: 0, n2o_factor: 0, total_co2e_factor: 0.15, factor_source: 'Sample travel factor', factor_year: 2025, gwp_version: 'AR6' },
-    { activity_name: 'Landfilled Waste', activity_group: 'Waste', scope: 'Scope 3', category: 'Waste generated in operations', unit: 'kg', co2_factor: 0, fossil_ch4_factor: 0, ch4_factor: 0, n2o_factor: 0, total_co2e_factor: 0.57, factor_source: 'Sample waste factor', factor_year: 2025, gwp_version: 'AR6' }
+    { factor_name: 'Diesel Fuel Combustion Factor', co2_factor: 2.68, fossil_ch4_factor: 0, ch4_factor: 0.0001, n2o_factor: 0.00006, total_co2e_factor: 2.71, total_co2e_unit: 'kg CO2e/liter', factor_source: 'Sample internal factor', factor_year: 2025, gwp_version: 'AR6' },
+    { factor_name: 'Gasoline Fuel Combustion Factor', co2_factor: 2.31, fossil_ch4_factor: 0, ch4_factor: 0.0002, n2o_factor: 0.00005, total_co2e_factor: 2.34, total_co2e_unit: 'kg CO2e/liter', factor_source: 'Sample internal factor', factor_year: 2025, gwp_version: 'AR6' },
+    { factor_name: 'Purchased Electricity Grid Factor', co2_factor: 0, fossil_ch4_factor: 0, ch4_factor: 0, n2o_factor: 0, total_co2e_factor: 0.45, total_co2e_unit: 'kg CO2e/kWh', factor_source: 'Sample grid factor', factor_year: 2025, gwp_version: 'AR6' },
+    { factor_name: 'Business Air Travel Factor', co2_factor: 0, fossil_ch4_factor: 0, ch4_factor: 0, n2o_factor: 0, total_co2e_factor: 0.15, total_co2e_unit: 'kg CO2e/passenger-km', factor_source: 'Sample travel factor', factor_year: 2025, gwp_version: 'AR6' },
+    { factor_name: 'Landfilled Waste Factor', co2_factor: 0, fossil_ch4_factor: 0, ch4_factor: 0, n2o_factor: 0, total_co2e_factor: 0.57, total_co2e_unit: 'kg CO2e/kg', factor_source: 'Sample waste factor', factor_year: 2025, gwp_version: 'AR6' }
+  ];
+}
+
+
+function getSampleActivities_() {
+  return [
+    { activity_name: 'Diesel Fuel Combustion', group: 'Stationary Fuel', scope: 'Scope 1', category: 'Fuel combustion', unit: 'liter', default_factor_name: 'Diesel Fuel Combustion Factor' },
+    { activity_name: 'Gasoline Fuel Combustion', group: 'Mobile Fuel', scope: 'Scope 1', category: 'Company vehicles', unit: 'liter', default_factor_name: 'Gasoline Fuel Combustion Factor' },
+    { activity_name: 'Purchased Electricity', group: 'Electricity', scope: 'Scope 2', category: 'Location-based electricity', unit: 'kWh', default_factor_name: 'Purchased Electricity Grid Factor' },
+    { activity_name: 'Business Air Travel', group: 'Business Travel', scope: 'Scope 3', category: 'Air travel', unit: 'passenger-km', default_factor_name: 'Business Air Travel Factor' },
+    { activity_name: 'Landfilled Waste', group: 'Waste', scope: 'Scope 3', category: 'Waste generated in operations', unit: 'kg', default_factor_name: 'Landfilled Waste Factor' }
   ];
 }
 
 function importSampleEmissionFactors() {
-  const existing = getEmissionFactors({ includeInactive: true }).map(function(f) { return String(f.activity_name).toLowerCase(); });
+  const existing = getEmissionFactors({ includeInactive: true }).map(function(f) { return String(f.factor_name).toLowerCase(); });
   let imported = 0;
   getSampleEmissionFactors_().forEach(function(factor) {
-    if (existing.indexOf(String(factor.activity_name).toLowerCase()) === -1) {
+    if (existing.indexOf(String(factor.factor_name).toLowerCase()) === -1) {
       saveEmissionFactor(factor);
       imported++;
     }
