@@ -1,40 +1,424 @@
 <script>
-const state={departments:[],factors:[],records:[],charts:{},reportFilters:{}};
-const months=Array.from({length:12},(_,i)=>String(i+1).padStart(2,'0'));
-const run=(fn,...args)=>new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](...args));
-function toast(msg,error=false){const el=document.getElementById('toast');el.textContent=msg;el.className='toast'+(error?' error':'');setTimeout(()=>el.classList.add('hidden'),3500)}
-function fmt(n,d=3){return Number(n||0).toLocaleString(undefined,{maximumFractionDigits:d})}
-function active(items){return items.filter(i=>String(i.is_active).toLowerCase()!=='false')}
-function opts(items,value,label,blank='All'){return `<option value="">${blank}</option>`+items.map(i=>`<option value="${i[value]}">${i[label]}</option>`).join('')}
-function monthOptions(blank='All'){return `<option value="">${blank}</option>`+months.map(m=>`<option value="${m}">${m}</option>`).join('')}
-function filtersHtml(prefix,extra=''){return `<label>Year<input id="${prefix}Year" type="number" placeholder="Year"></label><label>Month<select id="${prefix}Month">${monthOptions()}</select></label><label>Department<select id="${prefix}Dept">${opts(active(state.departments),'department_id','department_name')}</select></label><label>Scope<select id="${prefix}Scope"><option value="">All</option><option>Scope 1</option><option>Scope 2</option><option>Scope 3</option></select></label>${extra}<button onclick="${prefix==='dash'?'loadDashboard':prefix==='rec'?'loadRecords':'loadReport'}()">Apply</button>`}
-function getFilters(prefix){return {year:document.getElementById(prefix+'Year')?.value,month:document.getElementById(prefix+'Month')?.value,department_id:document.getElementById(prefix+'Dept')?.value,scope:document.getElementById(prefix+'Scope')?.value,category:document.getElementById(prefix+'Category')?.value,activity_name:document.getElementById(prefix+'Activity')?.value}}
-function table(id,heads,rows){document.getElementById(id).innerHTML='<thead><tr>'+heads.map(h=>`<th>${h}</th>`).join('')+'</tr></thead><tbody>'+rows.join('')+'</tbody>'}
-function chart(id,type,labels,data,label){if(state.charts[id])state.charts[id].destroy();state.charts[id]=new Chart(document.getElementById(id),{type,data:{labels,datasets:[{label,data,backgroundColor:['#166534','#2563eb','#f59e0b','#dc2626','#7c3aed','#0891b2'],borderColor:'#166534',tension:.25}]},options:{responsive:true,plugins:{legend:{display:type!=='bar'&&type!=='line'}}}})}
-async function init(){document.querySelectorAll('.nav').forEach(b=>b.onclick=()=>showPage(b.dataset.page));document.getElementById('setupBtn').onclick=async()=>{await run('setupDatabase');toast('Database setup completed');await loadLookups();await loadAll()};await run('setupDatabase');await loadLookups();buildFilters();initActivityForm();await loadAll()}
-function showPage(id){document.querySelectorAll('.page,.nav').forEach(e=>e.classList.remove('active'));document.getElementById(id).classList.add('active');document.querySelector(`[data-page="${id}"]`).classList.add('active')}
-async function loadLookups(){state.departments=await run('getDepartments',{});state.factors=await run('getEmissionFactors',{})}
-function buildFilters(){document.getElementById('dashboardFilters').innerHTML=filtersHtml('dash');document.getElementById('recordFilters').innerHTML=filtersHtml('rec','<label>Activity<input id="recActivity" placeholder="Activity"></label><label>Category<input id="recCategory" placeholder="Category"></label>');document.getElementById('reportFilters').innerHTML=filtersHtml('rep','<label>Category<input id="repCategory" placeholder="Category"></label>')}
-async function loadAll(){await Promise.all([loadDashboard(),loadRecords(),loadFactors(),loadDepartments()])}
-async function loadDashboard(){const data=await run('getDashboardData',getFilters('dash'));document.getElementById('summaryCards').innerHTML=[['Total tCO2e',data.total_tco2e],['Scope 1 tCO2e',data.scope1_tco2e],['Scope 2 tCO2e',data.scope2_tco2e],['Scope 3 tCO2e',data.scope3_tco2e],['Top Department',data.top_department.label,fmt(data.top_department.value)],['Top Activity',data.top_activity.label,fmt(data.top_activity.value)]].map(c=>`<div class="card"><div class="muted">${c[0]}</div><div class="metric">${typeof c[1]==='number'?fmt(c[1]):c[1]}</div>${c[2]?`<div class="muted">${c[2]} tCO2e</div>`:''}</div>`).join('');chart('monthlyChart','line',data.monthly_trend.map(x=>x.label),data.monthly_trend.map(x=>x.value),'Monthly trend');chart('scopeChart','doughnut',data.by_scope.map(x=>x.label),data.by_scope.map(x=>x.value),'By scope');chart('deptChart','bar',data.by_department.map(x=>x.label),data.by_department.map(x=>x.value),'By department');chart('activityChart','bar',data.by_activity.map(x=>x.label),data.by_activity.map(x=>x.value),'By activity');chart('topChart','bar',data.top_sources.map(x=>x.label),data.top_sources.map(x=>x.value),'Top 5')}
-function initActivityForm(){const f=document.getElementById('activityForm');f.year.value=new Date().getFullYear();f.month.innerHTML=months.map(m=>`<option value="${m}">${m}</option>`).join('');f.month.value=String(new Date().getMonth()+1).padStart(2,'0');f.department_id.innerHTML=opts(active(state.departments),'department_id','department_name','Select department');f.factor_id.innerHTML=opts(active(state.factors),'factor_id','activity_name','Select activity');f.factor_id.onchange=updateFactorDetails;f.amount.oninput=updateFactorDetails;f.onsubmit=saveActivityFromForm;updateFactorDetails()}
-function selectedFactor(){return state.factors.find(x=>String(x.factor_id)===document.getElementById('activityForm').factor_id.value)||{}}
-function updateFactorDetails(){const f=document.getElementById('activityForm'),ef=selectedFactor();f.unit.value=ef.unit||'';const fields=['activity_group','scope','category','unit','co2_factor','fossil_ch4_factor','ch4_factor','n2o_factor','total_co2e_factor','factor_source','factor_year','gwp_version'];document.getElementById('factorDetails').innerHTML=fields.map(k=>`<div><b>${k.replaceAll('_',' ')}</b><br>${ef[k]??''}</div>`).join('');const amount=Number(f.amount.value||0),total=amount*Number(ef.total_co2e_factor||0);document.getElementById('calcPreview').innerHTML=[['Emission CO2',amount*Number(ef.co2_factor||0)],['Emission Fossil CH4',amount*Number(ef.fossil_ch4_factor||0)],['Emission CH4',amount*Number(ef.ch4_factor||0)],['Emission N2O',amount*Number(ef.n2o_factor||0)],['Emission kgCO2e',total],['Emission tCO2e',total/1000]].map(x=>`<div><b>${x[0]}</b><br>${fmt(x[1])}</div>`).join('')}
-async function saveActivityFromForm(e){e.preventDefault();const data=Object.fromEntries(new FormData(e.target).entries());try{await run(data.record_id?'updateActivityRecord':'saveActivityRecord',data);toast('Activity record saved');clearActivityForm();await loadRecords();await loadDashboard()}catch(err){toast(err.message,true)}}
-function clearActivityForm(){const f=document.getElementById('activityForm');f.reset();f.record_id.value='';f.year.value=new Date().getFullYear();f.month.value=String(new Date().getMonth()+1).padStart(2,'0');updateFactorDetails()}
-async function duplicateLastMonthFromForm(){const f=document.getElementById('activityForm');try{await run('duplicateLastMonth',Object.fromEntries(new FormData(f).entries()));toast('Last-month record duplicated');await loadRecords();await loadDashboard()}catch(e){toast(e.message,true)}}
-async function loadRecords(){state.records=await run('getActivityRecords',getFilters('rec'));table('recordsTable',['Period','Department','Activity Name','Scope','Category','Amount','Unit','Emission tCO2e','Factor Source','Remark','Actions'],state.records.map(r=>`<tr><td>${r.period}</td><td>${r.department_name}</td><td>${r.activity_name}</td><td>${r.scope}</td><td>${r.category}</td><td>${fmt(r.amount)}</td><td>${r.unit}</td><td>${fmt(r.emission_tco2e)}</td><td>${r.factor_source}</td><td>${r.remark||''}</td><td><button onclick="editRecord('${r.record_id}')">Edit</button> <button class="secondary" onclick="dupRecord('${r.record_id}')">Duplicate</button> <button class="secondary" onclick="delRecord('${r.record_id}')">Delete</button></td></tr>`))}
-function editRecord(id){const r=state.records.find(x=>x.record_id===id),f=document.getElementById('activityForm');showPage('add-record');Object.keys(r).forEach(k=>{if(f[k])f[k].value=r[k]});updateFactorDetails()}
-async function dupRecord(id){await run('duplicateActivityRecord',id,{});toast('Record duplicated');await loadRecords();await loadDashboard()} async function delRecord(id){if(confirm('Delete this record?')){await run('deleteActivityRecord',id);toast('Record deleted');await loadRecords();await loadDashboard()}}
-async function loadFactors(){state.factors=await run('getEmissionFactors',{includeInactive:true,search:document.getElementById('factorSearch')?.value||''});table('factorsTable',['Activity Name','Activity Group','Scope','Category','Unit','CO2 Factor','Fossil CH4 Factor','CH4 Factor','N2O Factor','Total CO2e Factor','Factor Source','Factor Year','GWP Version','Active','Actions'],state.factors.map(f=>`<tr><td>${f.activity_name}</td><td>${f.activity_group}</td><td>${f.scope}</td><td>${f.category}</td><td>${f.unit}</td><td>${f.co2_factor}</td><td>${f.fossil_ch4_factor}</td><td>${f.ch4_factor}</td><td>${f.n2o_factor}</td><td>${f.total_co2e_factor}</td><td>${f.factor_source}</td><td>${f.factor_year}</td><td>${f.gwp_version}</td><td>${f.is_active}</td><td><button onclick="openFactorModal('${f.factor_id}')">Edit</button> <button class="secondary" onclick="deactivateFactor('${f.factor_id}')">Deactivate</button></td></tr>`));initActivityForm()}
-function factorForm(f={}){return `<h3>${f.factor_id?'Edit':'Add'} Emission Factor</h3><form id="factorForm" class="form-grid">${['factor_id','activity_name','activity_group','scope','category','unit','co2_factor','fossil_ch4_factor','ch4_factor','n2o_factor','total_co2e_factor','factor_source','factor_year','gwp_version'].map(k=>`<label>${k.replaceAll('_',' ')}<input name="${k}" value="${f[k]||''}" ${k==='factor_id'?'readonly':''}></label>`).join('')}<label>Active<select name="is_active"><option value="true">true</option><option value="false" ${String(f.is_active)==='false'?'selected':''}>false</option></select></label><div class="span-2"><button>Save</button></div></form>`}
-function openFactorModal(id){const f=state.factors.find(x=>x.factor_id===id)||{};document.getElementById('modalContent').innerHTML=factorForm(f);document.getElementById('modal').classList.remove('hidden');document.getElementById('factorForm').onsubmit=async e=>{e.preventDefault();await run(id?'updateEmissionFactor':'saveEmissionFactor',Object.fromEntries(new FormData(e.target).entries()));closeModal();toast('Factor saved');await loadLookups();await loadFactors()}}
-async function deactivateFactor(id){await run('deactivateEmissionFactor',id);toast('Factor deactivated');await loadFactors()} async function importSampleFactors(){const r=await run('importSampleEmissionFactors');toast(`${r.imported} sample factors imported`);await loadFactors()}
-async function loadDepartments(){state.departments=await run('getDepartments',{includeInactive:true});table('departmentsTable',['Department Name','Description','Active','Actions'],state.departments.map(d=>`<tr><td>${d.department_name}</td><td>${d.description||''}</td><td>${d.is_active}</td><td><button onclick="openDepartmentModal('${d.department_id}')">Edit</button> <button class="secondary" onclick="deactivateDepartment('${d.department_id}')">Deactivate</button></td></tr>`));buildFilters()}
-function openDepartmentModal(id){const d=state.departments.find(x=>x.department_id===id)||{};document.getElementById('modalContent').innerHTML=`<h3>${id?'Edit':'Add'} Department</h3><form id="departmentForm" class="form-grid"><input type="hidden" name="department_id" value="${d.department_id||''}"><label>Department Name<input name="department_name" value="${d.department_name||''}" required></label><label>Description<input name="description" value="${d.description||''}"></label><label>Active<select name="is_active"><option value="true">true</option><option value="false" ${String(d.is_active)==='false'?'selected':''}>false</option></select></label><div class="span-2"><button>Save</button></div></form>`;document.getElementById('modal').classList.remove('hidden');document.getElementById('departmentForm').onsubmit=async e=>{e.preventDefault();await run(id?'updateDepartment':'saveDepartment',Object.fromEntries(new FormData(e.target).entries()));closeModal();toast('Department saved');await loadLookups();await loadDepartments()}}
-async function deactivateDepartment(id){await run('deactivateDepartment',id);toast('Department deactivated');await loadDepartments()} function closeModal(){document.getElementById('modal').classList.add('hidden')}
-async function loadReport(){const data=await run('getReportData',getFilters('rep'));state.reportFilters=getFilters('rep');document.getElementById('reportOutput').innerHTML=`<h2>${data.company.company_name||''} Carbon Footprint Report</h2><p><b>Site:</b> ${data.company.site_name||''} <b>Prepared by:</b> ${data.company.prepared_by||''}</p><h3>Reporting period</h3><p>Year ${state.reportFilters.year||'All'}, Month ${state.reportFilters.month||'All'}</p><h3>Total emission summary</h3><div class="cards"><div class="card"><div class="metric">${fmt(data.summary.total_tco2e)}</div><div class="muted">Total tCO2e</div></div></div>${section('Emission by Scope',data.summary.by_scope)}${section('Emission by Department',data.summary.by_department)}${section('Emission by Activity',data.summary.by_activity)}${section('Monthly trend',data.summary.monthly_trend)}<h3>Detailed activity records</h3><div class="table-wrap"><table><tr><th>Period</th><th>Department</th><th>Activity</th><th>Scope</th><th>Amount</th><th>tCO2e</th></tr>${data.records.map(r=>`<tr><td>${r.period}</td><td>${r.department_name}</td><td>${r.activity_name}</td><td>${r.scope}</td><td>${fmt(r.amount)} ${r.unit}</td><td>${fmt(r.emission_tco2e)}</td></tr>`).join('')}</table></div><h3>Emission factor reference</h3><div class="table-wrap"><table><tr><th>Activity</th><th>Factor</th><th>Source</th><th>Year</th><th>GWP</th></tr>${data.factors.map(f=>`<tr><td>${f.activity_name}</td><td>${f.total_co2e_factor} ${f.total_co2e_unit}</td><td>${f.factor_source}</td><td>${f.factor_year}</td><td>${f.gwp_version}</td></tr>`).join('')}</table></div>`}
-function section(title,items){return `<h3>${title}</h3><div class="table-wrap"><table><tr><th>Name</th><th>tCO2e</th></tr>${items.map(i=>`<tr><td>${i.label}</td><td>${fmt(i.value)}</td></tr>`).join('')}</table></div>`}
-async function exportCsv(){const csv=await run('exportRecordsCsv',state.reportFilters||getFilters('rep'));const blob=new Blob([csv],{type:'text/csv'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='carbon_activity_records.csv';a.click();URL.revokeObjectURL(a.href)}
-window.addEventListener('load',()=>init().catch(e=>toast(e.message,true)));
+const state = {
+  departments: [],
+  factors: [],
+  records: [],
+  charts: {},
+  reportFilters: {}
+};
+
+const months = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0'));
+
+function runServer(functionName, ...args) {
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(reject)[functionName](...args);
+  });
+}
+
+function showToast(message, isError) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.className = 'toast' + (isError ? ' error' : '');
+  setTimeout(() => toast.classList.add('hidden'), 3500);
+}
+
+function formatNumber(value, digits = 3) {
+  return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: digits });
+}
+
+function isActive(item) {
+  return String(item.is_active).toLowerCase() !== 'false';
+}
+
+function activeOnly(items) {
+  return items.filter(isActive);
+}
+
+function optionHtml(items, valueKey, labelKey, blankLabel = 'All') {
+  return `<option value="">${blankLabel}</option>` + items.map(item => (
+    `<option value="${item[valueKey]}">${item[labelKey]}</option>`
+  )).join('');
+}
+
+function monthOptions(blankLabel = 'All') {
+  return `<option value="">${blankLabel}</option>` + months.map(month => (
+    `<option value="${month}">${month}</option>`
+  )).join('');
+}
+
+function buildFilterHtml(prefix, extraHtml = '') {
+  const handler = prefix === 'dash' ? 'loadDashboard' : prefix === 'rec' ? 'loadRecords' : 'loadReport';
+  return `
+    <label>Year<input id="${prefix}Year" type="number" placeholder="Year"></label>
+    <label>Month<select id="${prefix}Month">${monthOptions()}</select></label>
+    <label>Department<select id="${prefix}Dept">${optionHtml(activeOnly(state.departments), 'department_id', 'department_name')}</select></label>
+    <label>Scope<select id="${prefix}Scope"><option value="">All</option><option>Scope 1</option><option>Scope 2</option><option>Scope 3</option></select></label>
+    ${extraHtml}
+    <button onclick="${handler}()">Apply</button>`;
+}
+
+function getFilters(prefix) {
+  return {
+    year: document.getElementById(prefix + 'Year')?.value,
+    month: document.getElementById(prefix + 'Month')?.value,
+    department_id: document.getElementById(prefix + 'Dept')?.value,
+    scope: document.getElementById(prefix + 'Scope')?.value,
+    category: document.getElementById(prefix + 'Category')?.value,
+    activity_name: document.getElementById(prefix + 'Activity')?.value
+  };
+}
+
+function renderTable(tableId, headers, rows) {
+  document.getElementById(tableId).innerHTML = `
+    <thead><tr>${headers.map(header => `<th>${header}</th>`).join('')}</tr></thead>
+    <tbody>${rows.join('')}</tbody>`;
+}
+
+function renderChart(canvasId, type, labels, data, label) {
+  if (state.charts[canvasId]) state.charts[canvasId].destroy();
+  state.charts[canvasId] = new Chart(document.getElementById(canvasId), {
+    type,
+    data: {
+      labels,
+      datasets: [{
+        label,
+        data,
+        backgroundColor: ['#166534', '#2563eb', '#f59e0b', '#dc2626', '#7c3aed', '#0891b2'],
+        borderColor: '#166534',
+        tension: 0.25
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: type !== 'bar' && type !== 'line' } }
+    }
+  });
+}
+
+async function initializeApp() {
+  document.querySelectorAll('.nav').forEach(button => {
+    button.onclick = () => showPage(button.dataset.page);
+  });
+  document.getElementById('setupBtn').onclick = async () => {
+    await runServer('setupDatabase');
+    showToast('Database setup completed');
+    await loadLookups();
+    buildFilters();
+    initializeActivityForm();
+    await loadAllPages();
+  };
+
+  await runServer('setupDatabase');
+  await loadLookups();
+  buildFilters();
+  initializeActivityForm();
+  await loadAllPages();
+}
+
+function showPage(pageId) {
+  document.querySelectorAll('.page, .nav').forEach(element => element.classList.remove('active'));
+  document.getElementById(pageId).classList.add('active');
+  document.querySelector(`[data-page="${pageId}"]`).classList.add('active');
+}
+
+async function loadLookups() {
+  state.departments = await runServer('getDepartments', { includeInactive: true });
+  state.factors = await runServer('getEmissionFactors', { includeInactive: true });
+}
+
+function buildFilters() {
+  document.getElementById('dashboardFilters').innerHTML = buildFilterHtml('dash');
+  document.getElementById('recordFilters').innerHTML = buildFilterHtml('rec', `
+    <label>Activity<input id="recActivity" placeholder="Activity"></label>
+    <label>Category<input id="recCategory" placeholder="Category"></label>`);
+  document.getElementById('reportFilters').innerHTML = buildFilterHtml('rep', `
+    <label>Category<input id="repCategory" placeholder="Category"></label>`);
+}
+
+async function loadAllPages() {
+  await Promise.all([loadDashboard(), loadRecords(), loadFactors(), loadDepartments()]);
+}
+
+async function loadDashboard() {
+  const data = await runServer('getDashboardData', getFilters('dash'));
+  document.getElementById('summaryCards').innerHTML = [
+    ['Total tCO2e', data.total_tco2e],
+    ['Scope 1 tCO2e', data.scope1_tco2e],
+    ['Scope 2 tCO2e', data.scope2_tco2e],
+    ['Scope 3 tCO2e', data.scope3_tco2e],
+    ['Top Department', data.top_department.label, formatNumber(data.top_department.value)],
+    ['Top Activity', data.top_activity.label, formatNumber(data.top_activity.value)]
+  ].map(card => `
+    <div class="card">
+      <div class="muted">${card[0]}</div>
+      <div class="metric">${typeof card[1] === 'number' ? formatNumber(card[1]) : card[1]}</div>
+      ${card[2] ? `<div class="muted">${card[2]} tCO2e</div>` : ''}
+    </div>`).join('');
+
+  renderChart('monthlyChart', 'line', data.monthly_trend.map(item => item.label), data.monthly_trend.map(item => item.value), 'Monthly trend');
+  renderChart('scopeChart', 'doughnut', data.by_scope.map(item => item.label), data.by_scope.map(item => item.value), 'By scope');
+  renderChart('deptChart', 'bar', data.by_department.map(item => item.label), data.by_department.map(item => item.value), 'By department');
+  renderChart('activityChart', 'bar', data.by_activity.map(item => item.label), data.by_activity.map(item => item.value), 'By activity');
+  renderChart('topChart', 'bar', data.top_sources.map(item => item.label), data.top_sources.map(item => item.value), 'Top 5');
+}
+
+function initializeActivityForm() {
+  const form = document.getElementById('activityForm');
+  const activeDepartments = activeOnly(state.departments);
+  const activeFactors = activeOnly(state.factors);
+  form.year.value = new Date().getFullYear();
+  form.month.innerHTML = months.map(month => `<option value="${month}">${month}</option>`).join('');
+  form.month.value = String(new Date().getMonth() + 1).padStart(2, '0');
+  form.department_id.innerHTML = optionHtml(activeDepartments, 'department_id', 'department_name', 'Select department');
+  form.factor_id.innerHTML = optionHtml(activeFactors, 'factor_id', 'activity_name', 'Select activity');
+  form.factor_id.onchange = updateFactorDetails;
+  form.amount.oninput = updateFactorDetails;
+  form.onsubmit = saveActivityFromForm;
+  updateFactorDetails();
+}
+
+function selectedFactor() {
+  const form = document.getElementById('activityForm');
+  return state.factors.find(factor => String(factor.factor_id) === form.factor_id.value) || {};
+}
+
+function updateFactorDetails() {
+  const form = document.getElementById('activityForm');
+  const factor = selectedFactor();
+  form.unit.value = factor.unit || '';
+
+  const detailFields = [
+    'activity_group', 'scope', 'category', 'unit', 'co2_factor', 'fossil_ch4_factor',
+    'ch4_factor', 'n2o_factor', 'total_co2e_factor', 'total_co2e_unit',
+    'factor_source', 'factor_year', 'gwp_version'
+  ];
+  document.getElementById('factorDetails').innerHTML = detailFields.map(key => `
+    <div><b>${key.replaceAll('_', ' ')}</b><br>${factor[key] ?? ''}</div>`).join('');
+
+  const amount = Number(form.amount.value || 0);
+  const totalFactor = Number(factor.total_co2e_factor || 0);
+  const kgco2e = amount * totalFactor;
+  document.getElementById('calcPreview').innerHTML = [
+    ['Snapshot Total CO2e Factor', totalFactor],
+    ['Snapshot Total CO2e Unit', factor.total_co2e_unit || ''],
+    ['Emission kgCO2e', kgco2e],
+    ['Emission tCO2e', kgco2e / 1000]
+  ].map(item => `
+    <div><b>${item[0]}</b><br>${typeof item[1] === 'number' ? formatNumber(item[1]) : item[1]}</div>`).join('');
+}
+
+async function saveActivityFromForm(event) {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.target).entries());
+  try {
+    await runServer(data.record_id ? 'updateActivityRecord' : 'saveActivityRecord', data);
+    showToast('Activity record saved');
+    clearActivityForm();
+    await loadRecords();
+    await loadDashboard();
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+function clearActivityForm() {
+  const form = document.getElementById('activityForm');
+  form.reset();
+  form.record_id.value = '';
+  form.year.value = new Date().getFullYear();
+  form.month.value = String(new Date().getMonth() + 1).padStart(2, '0');
+  updateFactorDetails();
+}
+
+async function duplicateLastMonthFromForm() {
+  const form = document.getElementById('activityForm');
+  try {
+    await runServer('duplicateLastMonth', Object.fromEntries(new FormData(form).entries()));
+    showToast('Last-month record duplicated');
+    await loadRecords();
+    await loadDashboard();
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+async function loadRecords() {
+  state.records = await runServer('getActivityRecords', getFilters('rec'));
+  renderTable('recordsTable', ['Period', 'Department', 'Activity Name', 'Scope', 'Category', 'Amount', 'Unit', 'Emission tCO2e', 'Factor Source', 'Remark', 'Actions'],
+    state.records.map(record => `
+      <tr>
+        <td>${record.period}</td><td>${record.department_name}</td><td>${record.activity_name}</td>
+        <td>${record.scope}</td><td>${record.category}</td><td>${formatNumber(record.amount)}</td>
+        <td>${record.unit}</td><td>${formatNumber(record.emission_tco2e)}</td><td>${record.factor_source}</td><td>${record.remark || ''}</td>
+        <td><button onclick="editRecord('${record.record_id}')">Edit</button> <button class="secondary" onclick="duplicateRecord('${record.record_id}')">Duplicate</button> <button class="secondary" onclick="deleteRecord('${record.record_id}')">Delete</button></td>
+      </tr>`));
+}
+
+function editRecord(recordId) {
+  const record = state.records.find(item => item.record_id === recordId);
+  const form = document.getElementById('activityForm');
+  showPage('add-record');
+  Object.keys(record).forEach(key => {
+    if (form[key]) form[key].value = record[key];
+  });
+  updateFactorDetails();
+}
+
+async function duplicateRecord(recordId) {
+  await runServer('duplicateActivityRecord', recordId, {});
+  showToast('Record duplicated');
+  await loadRecords();
+  await loadDashboard();
+}
+
+async function deleteRecord(recordId) {
+  if (!confirm('Delete this record?')) return;
+  await runServer('deleteActivityRecord', recordId);
+  showToast('Record deleted');
+  await loadRecords();
+  await loadDashboard();
+}
+
+async function loadFactors() {
+  const search = document.getElementById('factorSearch')?.value || '';
+  state.factors = await runServer('getEmissionFactors', { includeInactive: true, search });
+  renderTable('factorsTable', ['Activity Name', 'Activity Group', 'Scope', 'Category', 'Unit', 'CO2 Factor', 'Fossil CH4 Factor', 'CH4 Factor', 'N2O Factor', 'Total CO2e Factor', 'Total CO2e Unit', 'Factor Source', 'Factor Year', 'GWP Version', 'Active', 'Actions'],
+    state.factors.map(factor => `
+      <tr>
+        <td>${factor.activity_name}</td><td>${factor.activity_group}</td><td>${factor.scope}</td><td>${factor.category}</td><td>${factor.unit}</td>
+        <td>${factor.co2_factor}</td><td>${factor.fossil_ch4_factor}</td><td>${factor.ch4_factor}</td><td>${factor.n2o_factor}</td>
+        <td>${factor.total_co2e_factor}</td><td>${factor.total_co2e_unit}</td><td>${factor.factor_source}</td><td>${factor.factor_year}</td><td>${factor.gwp_version}</td><td>${factor.is_active}</td>
+        <td><button onclick="openFactorModal('${factor.factor_id}')">Edit</button> <button class="secondary" onclick="deactivateFactor('${factor.factor_id}')">Deactivate</button></td>
+      </tr>`));
+  initializeActivityForm();
+}
+
+function factorFormHtml(factor = {}) {
+  const fields = ['factor_id', 'activity_name', 'activity_group', 'scope', 'category', 'unit', 'co2_factor', 'fossil_ch4_factor', 'ch4_factor', 'n2o_factor', 'total_co2e_factor', 'total_co2e_unit', 'factor_source', 'factor_year', 'gwp_version'];
+  return `
+    <h3>${factor.factor_id ? 'Edit' : 'Add'} Emission Factor</h3>
+    <form id="factorForm" class="form-grid">
+      ${fields.map(key => `
+        <label>${key.replaceAll('_', ' ')}<input name="${key}" value="${factor[key] || ''}" ${key === 'factor_id' ? 'readonly' : ''}></label>`).join('')}
+      <label>Active<select name="is_active"><option value="true">true</option><option value="false" ${String(factor.is_active) === 'false' ? 'selected' : ''}>false</option></select></label>
+      <div class="span-2"><button>Save</button></div>
+    </form>`;
+}
+
+function openFactorModal(factorId) {
+  const factor = state.factors.find(item => item.factor_id === factorId) || {};
+  document.getElementById('modalContent').innerHTML = factorFormHtml(factor);
+  document.getElementById('modal').classList.remove('hidden');
+  document.getElementById('factorForm').onsubmit = async event => {
+    event.preventDefault();
+    await runServer(factorId ? 'updateEmissionFactor' : 'saveEmissionFactor', Object.fromEntries(new FormData(event.target).entries()));
+    closeModal();
+    showToast('Factor saved');
+    await loadLookups();
+    await loadFactors();
+  };
+}
+
+async function deactivateFactor(factorId) {
+  await runServer('deactivateEmissionFactor', factorId);
+  showToast('Factor deactivated');
+  await loadFactors();
+}
+
+async function importSampleFactors() {
+  const result = await runServer('importSampleEmissionFactors');
+  showToast(`${result.imported} sample factors imported`);
+  await loadFactors();
+}
+
+async function loadDepartments() {
+  state.departments = await runServer('getDepartments', { includeInactive: true });
+  renderTable('departmentsTable', ['Department Name', 'Description', 'Active', 'Actions'],
+    state.departments.map(department => `
+      <tr>
+        <td>${department.department_name}</td><td>${department.description || ''}</td><td>${department.is_active}</td>
+        <td><button onclick="openDepartmentModal('${department.department_id}')">Edit</button> <button class="secondary" onclick="deactivateDepartment('${department.department_id}')">Deactivate</button></td>
+      </tr>`));
+  buildFilters();
+}
+
+function openDepartmentModal(departmentId) {
+  const department = state.departments.find(item => item.department_id === departmentId) || {};
+  document.getElementById('modalContent').innerHTML = `
+    <h3>${departmentId ? 'Edit' : 'Add'} Department</h3>
+    <form id="departmentForm" class="form-grid">
+      <input type="hidden" name="department_id" value="${department.department_id || ''}">
+      <label>Department Name<input name="department_name" value="${department.department_name || ''}" required></label>
+      <label>Description<input name="description" value="${department.description || ''}"></label>
+      <label>Active<select name="is_active"><option value="true">true</option><option value="false" ${String(department.is_active) === 'false' ? 'selected' : ''}>false</option></select></label>
+      <div class="span-2"><button>Save</button></div>
+    </form>`;
+  document.getElementById('modal').classList.remove('hidden');
+  document.getElementById('departmentForm').onsubmit = async event => {
+    event.preventDefault();
+    await runServer(departmentId ? 'updateDepartment' : 'saveDepartment', Object.fromEntries(new FormData(event.target).entries()));
+    closeModal();
+    showToast('Department saved');
+    await loadLookups();
+    await loadDepartments();
+  };
+}
+
+async function deactivateDepartment(departmentId) {
+  await runServer('deactivateDepartment', departmentId);
+  showToast('Department deactivated');
+  await loadDepartments();
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+}
+
+async function loadReport() {
+  state.reportFilters = getFilters('rep');
+  const data = await runServer('getReportData', state.reportFilters);
+  document.getElementById('reportOutput').innerHTML = `
+    <h2>${data.company.company_name || ''} Carbon Footprint Report</h2>
+    <p><b>Site:</b> ${data.company.site_name || ''} <b>Prepared by:</b> ${data.company.prepared_by || ''}</p>
+    <h3>Reporting period</h3>
+    <p>Year ${state.reportFilters.year || 'All'}, Month ${state.reportFilters.month || 'All'}</p>
+    <h3>Total emission summary</h3>
+    <div class="cards"><div class="card"><div class="metric">${formatNumber(data.summary.total_tco2e)}</div><div class="muted">Total tCO2e</div></div></div>
+    ${reportSection('Emission by Scope', data.summary.by_scope)}
+    ${reportSection('Emission by Department', data.summary.by_department)}
+    ${reportSection('Emission by Activity', data.summary.by_activity)}
+    ${reportSection('Monthly trend', data.summary.monthly_trend)}
+    <h3>Detailed activity records</h3>
+    <div class="table-wrap"><table><tr><th>Period</th><th>Department</th><th>Activity</th><th>Scope</th><th>Amount</th><th>Snapshot Factor</th><th>kgCO2e</th><th>tCO2e</th></tr>
+      ${data.records.map(record => `
+        <tr><td>${record.period}</td><td>${record.department_name}</td><td>${record.activity_name}</td><td>${record.scope}</td><td>${formatNumber(record.amount)} ${record.unit}</td><td>${record.snapshot_total_co2e_factor} ${record.snapshot_total_co2e_unit}</td><td>${formatNumber(record.emission_kgco2e)}</td><td>${formatNumber(record.emission_tco2e)}</td></tr>`).join('')}
+    </table></div>
+    <h3>Emission factor reference</h3>
+    <div class="table-wrap"><table><tr><th>Activity</th><th>CO2</th><th>Fossil CH4</th><th>CH4</th><th>N2O</th><th>Total CO2e Factor</th><th>Source</th><th>Year</th><th>GWP</th></tr>
+      ${data.factors.map(factor => `
+        <tr><td>${factor.activity_name}</td><td>${factor.co2_factor}</td><td>${factor.fossil_ch4_factor}</td><td>${factor.ch4_factor}</td><td>${factor.n2o_factor}</td><td>${factor.total_co2e_factor} ${factor.total_co2e_unit}</td><td>${factor.factor_source}</td><td>${factor.factor_year}</td><td>${factor.gwp_version}</td></tr>`).join('')}
+    </table></div>`;
+}
+
+function reportSection(title, items) {
+  return `
+    <h3>${title}</h3>
+    <div class="table-wrap"><table><tr><th>Name</th><th>tCO2e</th></tr>
+      ${items.map(item => `<tr><td>${item.label}</td><td>${formatNumber(item.value)}</td></tr>`).join('')}
+    </table></div>`;
+}
+
+async function exportCsv() {
+  const csv = await runServer('exportRecordsCsv', state.reportFilters || getFilters('rep'));
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'carbon_activity_records.csv';
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+window.addEventListener('load', () => initializeApp().catch(error => showToast(error.message, true)));
 </script>

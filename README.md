@@ -8,8 +8,8 @@ A simple Google Apps Script web application that uses Google Sheets as the datab
 - Summary cards for total emissions, scope totals, top department, and top activity
 - Chart.js charts for monthly trends, scope, department, activity, and top sources
 - Add/edit/delete/duplicate activity records
-- Automatic emission factor snapshotting when a record is saved
-- Separate gas calculations plus total kgCO2e and tCO2e calculations
+- Automatic total CO2e factor snapshotting when a record is saved
+- Gas factor references retained in the emission factor master, with activity records storing kgCO2e and tCO2e
 - Department master with add/edit/deactivate actions
 - Emission factor master with add/edit/deactivate and sample factor import
 - Printable report with company info, summaries, records, and factor references
@@ -32,21 +32,14 @@ The function also seeds default company settings, sample departments, and sample
 When an activity record is saved, the app:
 
 1. Reads the selected active or historical emission factor.
-2. Copies factor values into the activity record snapshot fields:
-   - `snapshot_co2_factor`
-   - `snapshot_fossil_ch4_factor`
-   - `snapshot_ch4_factor`
-   - `snapshot_n2o_factor`
+2. Copies only the total CO2e factor reference into the activity record snapshot fields:
    - `snapshot_total_co2e_factor`
+   - `snapshot_total_co2e_unit`
 3. Calculates and stores:
-   - `emission_co2 = amount × snapshot_co2_factor`
-   - `emission_fossil_ch4 = amount × snapshot_fossil_ch4_factor`
-   - `emission_ch4 = amount × snapshot_ch4_factor`
-   - `emission_n2o = amount × snapshot_n2o_factor`
    - `emission_kgco2e = amount × snapshot_total_co2e_factor`
    - `emission_tco2e = emission_kgco2e / 1000`
 
-Blank gas factors are treated as `0`. Existing activity records are not recalculated when the master factor changes unless the user edits that record.
+CO2, Fossil CH4, CH4, and N2O factors are stored only in `Emission_Factors` for reference. Existing activity records are not recalculated when the master factor changes unless the user edits that record.
 
 ## Project files
 

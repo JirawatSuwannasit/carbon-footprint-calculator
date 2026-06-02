@@ -8,8 +8,8 @@ const SHEET_NAMES = {
 const HEADERS = {
   Company_Settings: ['company_id', 'company_name', 'site_name', 'report_year', 'base_year', 'prepared_by', 'created_at', 'updated_at'],
   Departments: ['department_id', 'department_name', 'description', 'is_active', 'created_at', 'updated_at'],
-  Emission_Factors: ['factor_id', 'activity_name', 'activity_group', 'scope', 'category', 'unit', 'co2_factor', 'fossil_ch4_factor', 'ch4_factor', 'n2o_factor', 'total_co2e_factor', 'co2_unit', 'fossil_ch4_unit', 'ch4_unit', 'n2o_unit', 'total_co2e_unit', 'factor_source', 'factor_year', 'gwp_version', 'is_active', 'created_at', 'updated_at'],
-  Activity_Records: ['record_id', 'year', 'month', 'period', 'department_id', 'department_name', 'factor_id', 'activity_name', 'activity_group', 'scope', 'category', 'unit', 'amount', 'snapshot_co2_factor', 'snapshot_fossil_ch4_factor', 'snapshot_ch4_factor', 'snapshot_n2o_factor', 'snapshot_total_co2e_factor', 'emission_co2', 'emission_fossil_ch4', 'emission_ch4', 'emission_n2o', 'emission_kgco2e', 'emission_tco2e', 'factor_source', 'factor_year', 'gwp_version', 'remark', 'created_at', 'updated_at']
+  Emission_Factors: ['factor_id', 'activity_name', 'activity_group', 'scope', 'category', 'unit', 'co2_factor', 'fossil_ch4_factor', 'ch4_factor', 'n2o_factor', 'total_co2e_factor', 'total_co2e_unit', 'factor_source', 'factor_year', 'gwp_version', 'is_active', 'created_at', 'updated_at'],
+  Activity_Records: ['record_id', 'year', 'month', 'period', 'department_id', 'department_name', 'factor_id', 'activity_name', 'activity_group', 'scope', 'category', 'unit', 'amount', 'snapshot_total_co2e_factor', 'snapshot_total_co2e_unit', 'emission_kgco2e', 'emission_tco2e', 'factor_source', 'factor_year', 'gwp_version', 'remark', 'created_at', 'updated_at']
 };
 
 function include(filename) {

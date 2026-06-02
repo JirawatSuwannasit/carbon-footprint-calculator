@@ -6,14 +6,8 @@ function setupDatabase() {
     Object.keys(HEADERS).forEach(function(sheetName) {
       let sheet = spreadsheet.getSheetByName(sheetName);
       if (!sheet) sheet = spreadsheet.insertSheet(sheetName);
-      const headers = HEADERS[sheetName];
-      const lastColumn = Math.max(sheet.getLastColumn(), headers.length);
-      const currentHeaders = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, lastColumn).getValues()[0] : [];
-      if (currentHeaders.slice(0, headers.length).join('|') !== headers.join('|')) {
-        sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-        sheet.setFrozenRows(1);
-      }
-      sheet.autoResizeColumns(1, headers.length);
+      ensureSheetHeaders_(sheet, HEADERS[sheetName]);
+      sheet.autoResizeColumns(1, HEADERS[sheetName].length);
     });
     seedDefaultCompanySettings_();
     seedDepartments_();
@@ -24,6 +18,60 @@ function setupDatabase() {
   }
 }
 
+function ensureSheetHeaders_(sheet, headers) {
+  const lastColumn = Math.max(sheet.getLastColumn(), headers.length);
+  const existingHeaders = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, lastColumn).getValues()[0].filter(function(header) { return header !== ''; }) : [];
+  if (existingHeaders.join('|') === headers.join('|') && sheet.getLastColumn() === headers.length) {
+    sheet.setFrozenRows(1);
+    return;
+  }
+
+  const existingRows = sheet.getLastRow() > 1 ? sheetRowsToObjectsWithoutSetup_(sheet) : [];
+  const migratedRows = existingRows.map(function(row) { return migrateRowForHeaders_(row, headers); });
+  sheet.clearContents();
+  if (sheet.getMaxColumns() < headers.length) sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+  if (sheet.getMaxColumns() > headers.length) sheet.deleteColumns(headers.length + 1, sheet.getMaxColumns() - headers.length);
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  if (migratedRows.length) {
+    sheet.getRange(2, 1, migratedRows.length, headers.length).setValues(migratedRows.map(function(row) {
+      return headers.map(function(header) { return row[header] !== undefined ? row[header] : ''; });
+    }));
+  }
+  sheet.setFrozenRows(1);
+}
+
+function sheetRowsToObjectsWithoutSetup_(sheet) {
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return [];
+  const headers = values[0];
+  return values.slice(1).filter(function(row) {
+    return row.some(function(cell) { return cell !== ''; });
+  }).map(function(row) {
+    const object = {};
+    headers.forEach(function(header, index) {
+      if (header) object[header] = row[index];
+    });
+    return object;
+  });
+}
+
+function migrateRowForHeaders_(row, headers) {
+  const migrated = {};
+  headers.forEach(function(header) { migrated[header] = row[header] !== undefined ? row[header] : ''; });
+  if (headers.indexOf('snapshot_total_co2e_unit') !== -1 && !migrated.snapshot_total_co2e_unit) {
+    migrated.snapshot_total_co2e_unit = row.total_co2e_unit || (row.unit ? 'kg CO2e/' + row.unit : 'kg CO2e/unit');
+  }
+  if (headers.indexOf('emission_kgco2e') !== -1 && !migrated.emission_kgco2e && row.amount !== undefined && row.snapshot_total_co2e_factor !== undefined) {
+    migrated.emission_kgco2e = toNumber_(row.amount) * toNumber_(row.snapshot_total_co2e_factor);
+  }
+  if (headers.indexOf('emission_tco2e') !== -1 && !migrated.emission_tco2e && migrated.emission_kgco2e !== '') {
+    migrated.emission_tco2e = toNumber_(migrated.emission_kgco2e) / 1000;
+  }
+  if (headers.indexOf('total_co2e_unit') !== -1 && !migrated.total_co2e_unit) {
+    migrated.total_co2e_unit = row.unit ? 'kg CO2e/' + row.unit : 'kg CO2e/unit';
+  }
+  return migrated;
+}
 
 function seedDefaultCompanySettings_() {
   const sheet = getSpreadsheet_().getSheetByName(SHEET_NAMES.COMPANY);

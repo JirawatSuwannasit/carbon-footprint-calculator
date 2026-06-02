@@ -17,10 +17,6 @@ function buildActivityRecordPayload_(data, existing) {
   const factor = factors.find(function(item) { return String(item.factor_id) === String(data.factor_id); });
   if (!factor) throw new Error('Emission factor not found.');
 
-  const co2Factor = toNumber_(factor.co2_factor);
-  const fossilCh4Factor = toNumber_(factor.fossil_ch4_factor);
-  const ch4Factor = toNumber_(factor.ch4_factor);
-  const n2oFactor = toNumber_(factor.n2o_factor);
   const totalFactor = toNumber_(factor.total_co2e_factor);
   const kgco2e = amount * totalFactor;
   const now = nowIso_();
@@ -39,15 +35,8 @@ function buildActivityRecordPayload_(data, existing) {
     category: factor.category,
     unit: factor.unit,
     amount: amount,
-    snapshot_co2_factor: co2Factor,
-    snapshot_fossil_ch4_factor: fossilCh4Factor,
-    snapshot_ch4_factor: ch4Factor,
-    snapshot_n2o_factor: n2oFactor,
     snapshot_total_co2e_factor: totalFactor,
-    emission_co2: amount * co2Factor,
-    emission_fossil_ch4: amount * fossilCh4Factor,
-    emission_ch4: amount * ch4Factor,
-    emission_n2o: amount * n2oFactor,
+    snapshot_total_co2e_unit: factor.total_co2e_unit || 'kg CO2e/' + (factor.unit || 'unit'),
     emission_kgco2e: kgco2e,
     emission_tco2e: kgco2e / 1000,
     factor_source: factor.factor_source,
