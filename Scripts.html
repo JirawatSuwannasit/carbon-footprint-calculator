@@ -118,6 +118,38 @@ function getFilters(prefix) {
   };
 }
 
+function extractActivityRecordsResponse(response) {
+  console.log('Raw getActivityRecords response:', response);
+  console.log('Raw getActivityRecords response is array:', Array.isArray(response));
+  if (Array.isArray(response)) {
+    console.log('Activity Records received:', response.length);
+    return response;
+  }
+
+  if (response && Array.isArray(response.data)) {
+    console.warn('getActivityRecords returned a legacy {data: [...]} wrapper. Please redeploy the backend so getActivityRecords returns an array directly.', response);
+    console.log('Activity Records received:', response.data.length);
+    return response.data;
+  }
+
+  if (response && Array.isArray(response.records)) {
+    console.warn('getActivityRecords returned a legacy {records: [...]} wrapper. Please redeploy the backend so getActivityRecords returns an array directly.', response);
+    console.log('Activity Records received:', response.records.length);
+    return response.records;
+  }
+
+  console.error('Invalid getActivityRecords response:', response);
+  throw new Error('Backend getActivityRecords returned invalid data. Expected an array, received: ' + describeResponseShape(response));
+}
+
+function describeResponseShape(response) {
+  if (response === null) return 'null';
+  if (response === undefined) return 'undefined';
+  if (Array.isArray(response)) return 'array';
+  if (typeof response === 'object') return 'object with keys [' + Object.keys(response).join(', ') + ']';
+  return typeof response;
+}
+
 function setTableStatus(tableId, message, type = 'info') {
   document.getElementById(tableId).innerHTML = `<tbody><tr><td><div class="table-status ${type}">${message}</div></td></tr></tbody>`;
 }
@@ -301,8 +333,8 @@ async function loadRecords(button) {
     console.debug('Loading Activity Records with filters', getFilters('rec'));
     setTableStatus('recordsTable', 'Loading Activity Records...', 'info');
     try {
-      const records = await runServer('getActivityRecords', getFilters('rec'));
-      if (!Array.isArray(records)) throw new Error('Backend getActivityRecords did not return an array.');
+      const response = await runServer('getActivityRecords', getFilters('rec'));
+      const records = extractActivityRecordsResponse(response);
       state.records = records;
       console.debug('Activity Records loaded for rendering', records);
       renderTable('recordsTable', ['Period', 'Department', 'Activity Name', 'Scope', 'Category', 'Amount', 'Unit', 'Emission tCO2e', 'Factor Source', 'Remark', 'Actions'],

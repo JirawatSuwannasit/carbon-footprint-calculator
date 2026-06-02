@@ -149,7 +149,7 @@ These are sample placeholder factors only. Replace them with your company's appr
 
 ## Troubleshooting Activity Records
 
-If the Activity Records page is empty, first confirm the `Activity_Records` sheet exists and that the first columns match the expected headers in `Utils.gs`. The web app now shows an empty-state message when no records match the filters and a clear error toast/table message when the backend cannot read the sheet. Technical details are also written to the browser console and Apps Script `Logger` from `getActivityRecords()`.
+If the Activity Records page is empty, first confirm the `Activity_Records` sheet exists and that the first columns match the expected headers in `Utils.gs`. The `getActivityRecords()` API contract is to return an array directly (`[]` when no records exist) and throw an error for sheet/header problems. The web app now logs the raw `getActivityRecords()` response shape, shows an empty-state message when no records match the filters, and shows a clear error toast/table message when the backend cannot read the sheet. Technical details are also written to the browser console and Apps Script `Logger` from `getActivityRecords()`.
 
 Button actions now show loading text, disable during processing to prevent double submissions, and display success/error notifications after completion.
 

@@ -2,23 +2,54 @@ function getActivityRecords(filters) {
   Logger.log('getActivityRecords called with filters: ' + JSON.stringify(filters || {}));
   try {
     const sheet = getSheet_(SHEET_NAMES.RECORDS);
+    Logger.log('Reading sheet name: ' + sheet.getName());
     validateSheetHeaders_(sheet, HEADERS.Activity_Records);
-    Logger.log('Reading Activity_Records from sheet: ' + sheet.getName() + ', lastRow=' + sheet.getLastRow() + ', lastColumn=' + sheet.getLastColumn());
 
-    const rows = sheetRowsToObjects_(sheet);
-    Logger.log('Activity_Records raw non-empty row count: ' + rows.length);
+    const headersFound = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), HEADERS.Activity_Records.length)).getValues()[0]
+      .slice(0, HEADERS.Activity_Records.length);
+    Logger.log('Activity_Records headers found: ' + headersFound.join(', '));
+    Logger.log('Activity_Records sheet dimensions: lastRow=' + sheet.getLastRow() + ', lastColumn=' + sheet.getLastColumn());
+
+    const rows = readActivityRecordsForClient_(sheet);
+    Logger.log('Activity_Records rows found before filters: ' + rows.length);
 
     const filteredRows = applyRecordFilters_(rows, filters);
-    Logger.log('Activity_Records filtered row count: ' + filteredRows.length);
+    Logger.log('Activity_Records rows found after filters: ' + filteredRows.length);
 
-    return filteredRows.sort(function(a, b) {
+    const records = filteredRows.sort(function(a, b) {
       return String(b.period).localeCompare(String(a.period)) || String(a.department_name).localeCompare(String(b.department_name));
     });
+
+    Logger.log('getActivityRecords final return is array: ' + Array.isArray(records) + ', count=' + records.length);
+    return records;
   } catch (error) {
     Logger.log('Cannot load Activity_Records: ' + error.message + '\n' + (error.stack || ''));
-    throw new Error('Cannot load Activity Records. Please check that the Activity_Records sheet exists and headers are correct. Technical details: ' + error.message);
+    throw new Error('Activity_Records sheet not found or headers are invalid. ' + error.message);
   }
 }
+
+function readActivityRecordsForClient_(sheet) {
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) return [];
+  const headers = values[0];
+  return values.slice(1).filter(function(row) {
+    return row.some(function(cell) { return cell !== ''; });
+  }).map(function(row) {
+    const record = {};
+    HEADERS.Activity_Records.forEach(function(header) {
+      const columnIndex = headers.indexOf(header);
+      record[header] = sanitizeForClient_(columnIndex === -1 ? '' : row[columnIndex]);
+    });
+    return record;
+  });
+}
+
+function sanitizeForClient_(value) {
+  if (value instanceof Date) return value.toISOString();
+  if (value === null || value === undefined) return '';
+  return value;
+}
+
 
 function buildActivityRecordPayload_(data, existing) {
   data = data || {};
