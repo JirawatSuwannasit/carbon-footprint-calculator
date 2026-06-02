@@ -12,6 +12,7 @@ function setupDatabase() {
     seedDefaultCompanySettings_();
     seedDepartments_();
     seedEmissionFactors_();
+    seedDepartmentActivities_();
     return { success: true, message: 'Database setup completed.' };
   } finally {
     globalThis.__CARBON_DB_SETUP_RUNNING__ = false;
@@ -115,6 +116,39 @@ function seedEmissionFactors_() {
   if (sheet.getLastRow() > 1) return;
   getSampleEmissionFactors_().forEach(function(factor) {
     saveEmissionFactor(factor);
+  });
+}
+
+
+function seedDepartmentActivities_() {
+  const sheet = getSpreadsheet_().getSheetByName(SHEET_NAMES.DEPARTMENT_ACTIVITIES);
+  if (sheet.getLastRow() > 1) return;
+  const departments = getDepartments({ includeInactive: true });
+  const factors = getEmissionFactors({ includeInactive: true });
+  const departmentByName = departments.reduce(function(map, department) {
+    map[String(department.department_name).toLowerCase()] = department;
+    return map;
+  }, {});
+  const factorByName = factors.reduce(function(map, factor) {
+    map[String(factor.activity_name).toLowerCase()] = factor;
+    return map;
+  }, {});
+  const mappings = [
+    ['Operations', 'Diesel Fuel Combustion'],
+    ['Operations', 'Purchased Electricity'],
+    ['Facilities', 'Purchased Electricity'],
+    ['Facilities', 'Landfilled Waste'],
+    ['Logistics', 'Diesel Fuel Combustion'],
+    ['Logistics', 'Gasoline Fuel Combustion'],
+    ['Administration', 'Purchased Electricity'],
+    ['Administration', 'Business Air Travel']
+  ];
+  mappings.forEach(function(item) {
+    const department = departmentByName[String(item[0]).toLowerCase()];
+    const factor = factorByName[String(item[1]).toLowerCase()];
+    if (department && factor) {
+      saveDepartmentActivity({ department_id: department.department_id, factor_id: factor.factor_id });
+    }
   });
 }
 

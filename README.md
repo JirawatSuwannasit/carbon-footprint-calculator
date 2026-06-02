@@ -11,7 +11,7 @@ A simple Google Apps Script web application that uses Google Sheets as the datab
 - Automatic total CO2e factor snapshotting when a record is saved
 - Gas factor references retained in the emission factor master, with activity records storing kgCO2e and tCO2e
 - Department master with add/edit/deactivate actions
-- Emission factor master with add/edit/deactivate and sample factor import
+- Emission factor master with add/edit/deactivate, sample factor import, and department activity assignments
 - Printable report with company info, summaries, records, and factor references
 - Excel-compatible CSV export
 - `setupDatabase()` creates required sheets and headers automatically
@@ -24,8 +24,9 @@ The database is the spreadsheet attached to the Apps Script project. `setupDatab
 2. `Departments`
 3. `Emission_Factors`
 4. `Activity_Records`
+5. `Department_Activities`
 
-The function also seeds default company settings, sample departments, and sample emission factors if the relevant sheets are empty.
+The function also seeds default company settings, sample departments, sample emission factors, and sample department-activity mappings if the relevant sheets are empty.
 
 ## Calculation logic
 
@@ -51,6 +52,7 @@ CO2, Fossil CH4, CH4, and N2O factors are stored only in `Emission_Factors` for 
 - `Departments.gs` - department master API
 - `EmissionFactors.gs` - emission factor master API
 - `ActivityRecords.gs` - activity record API and calculations
+- `DepartmentActivities.gs` - department-to-activity assignment API
 - `Dashboard.gs` - dashboard aggregation API
 - `Report.gs` - report data and CSV export API
 - `Index.html` - single-page web app shell
@@ -146,6 +148,13 @@ The MVP includes sample factors for:
 
 These are sample placeholder factors only. Replace them with your company's approved factor sources before using the calculator for official reporting.
 
+
+
+## Department activity assignments
+
+The `Department_Activities` sheet maps departments to the emission factors they are allowed to use. The Add Activity Record form disables the Activity Name dropdown until a department is selected, then loads only active assigned activities through `getActivitiesByDepartment(departmentId)`. If no active activities are assigned, the form shows "No activities assigned to this department."
+
+Assignments can be managed in the **Department Activities** section inside the Emission Factor Master page. Use it to select a department, select an active emission factor, assign the activity, review assignments, and deactivate assignments.
 
 ## Troubleshooting Activity Records
 

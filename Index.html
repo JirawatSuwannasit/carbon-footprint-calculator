@@ -56,6 +56,15 @@
       <div class="page-header"><h2>Emission Factor Master</h2><button class="btn-primary" onclick="openFactorModal()">Add Factor</button></div>
       <div class="filters"><input id="factorSearch" placeholder="Search factors"><button class="btn-primary" onclick="loadFactors(this)">Search</button><button class="btn-secondary" onclick="importSampleFactors(this)">Import sample emission factors</button></div>
       <div class="table-wrap"><table id="factorsTable"></table></div>
+      <div class="card section-card">
+        <div class="page-header"><h3>Department Activities</h3><button class="btn-primary" onclick="loadDepartmentActivities(this)">Refresh Assignments</button></div>
+        <div class="filters">
+          <label>Department<select id="mapDepartment"></select></label>
+          <label>Activity / Emission Factor<select id="mapFactor"></select></label>
+          <button class="btn-save" onclick="assignDepartmentActivity(this)">Assign Activity</button>
+        </div>
+        <div class="table-wrap"><table id="departmentActivitiesTable"></table></div>
+      </div>
     </section>
 
     <section id="departments" class="page">

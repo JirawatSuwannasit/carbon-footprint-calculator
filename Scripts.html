@@ -2,6 +2,9 @@
 const state = {
   departments: [],
   factors: [],
+  allFactors: [],
+  availableActivities: [],
+  departmentActivities: [],
   records: [],
   charts: {},
   reportFilters: {}
@@ -211,7 +214,9 @@ function showPage(pageId) {
 
 async function loadLookups() {
   state.departments = await runServer('getDepartments', { includeInactive: true });
-  state.factors = await runServer('getEmissionFactors', { includeInactive: true });
+  state.allFactors = await runServer('getEmissionFactors', { includeInactive: true });
+  state.factors = state.allFactors;
+  state.departmentActivities = await runServer('getDepartmentActivities', { includeInactive: true });
 }
 
 function buildFilters() {
@@ -224,7 +229,7 @@ function buildFilters() {
 }
 
 async function loadAllPages() {
-  await Promise.allSettled([loadDashboard(), loadRecords(), loadFactors(), loadDepartments()]);
+  await Promise.allSettled([loadDashboard(), loadRecords(), loadFactors(), loadDepartments(), loadDepartmentActivities()]);
 }
 
 async function loadDashboard(button) {
@@ -254,20 +259,53 @@ async function loadDashboard(button) {
 
 function initializeActivityForm() {
   const form = document.getElementById('activityForm');
-  form.year.value = new Date().getFullYear();
+  form.year.value = form.year.value || new Date().getFullYear();
   form.month.innerHTML = months.map(month => `<option value="${month}">${month}</option>`).join('');
-  form.month.value = String(new Date().getMonth() + 1).padStart(2, '0');
+  form.month.value = form.month.value || String(new Date().getMonth() + 1).padStart(2, '0');
   form.department_id.innerHTML = optionHtml(activeOnly(state.departments), 'department_id', 'department_name', 'Select department');
-  form.factor_id.innerHTML = optionHtml(activeOnly(state.factors), 'factor_id', 'activity_name', 'Select activity');
+  form.department_id.onchange = () => loadActivitiesForSelectedDepartment();
   form.factor_id.onchange = updateFactorDetails;
   form.amount.oninput = updateFactorDetails;
   form.onsubmit = saveActivityFromForm;
-  updateFactorDetails();
+  clearActivitySelection('Select a department first.');
 }
 
 function selectedFactor() {
   const form = document.getElementById('activityForm');
-  return state.factors.find(factor => String(factor.factor_id) === form.factor_id.value) || {};
+  return state.availableActivities.find(factor => String(factor.factor_id) === form.factor_id.value) || {};
+}
+
+function clearActivitySelection(message) {
+  const form = document.getElementById('activityForm');
+  state.availableActivities = [];
+  form.factor_id.innerHTML = `<option value="">${message || 'Select activity'}</option>`;
+  form.factor_id.value = '';
+  form.factor_id.disabled = true;
+  form.unit.value = '';
+  document.getElementById('factorDetails').innerHTML = '';
+  document.getElementById('calcPreview').innerHTML = '';
+}
+
+async function loadActivitiesForSelectedDepartment(selectedFactorId) {
+  const form = document.getElementById('activityForm');
+  const departmentId = form.department_id.value;
+  clearActivitySelection(departmentId ? 'Loading activities...' : 'Select a department first.');
+  if (!departmentId) return;
+  try {
+    state.availableActivities = await runServer('getActivitiesByDepartment', departmentId);
+    if (!state.availableActivities.length) {
+      clearActivitySelection('No activities assigned to this department.');
+      showToast('No activities assigned to this department.', 'warning');
+      return;
+    }
+    form.factor_id.disabled = false;
+    form.factor_id.innerHTML = optionHtml(state.availableActivities, 'factor_id', 'activity_name', 'Select activity');
+    if (selectedFactorId) form.factor_id.value = selectedFactorId;
+    updateFactorDetails();
+  } catch (error) {
+    clearActivitySelection('Cannot load activities.');
+    handleError(error, 'Cannot load activities for selected department.');
+  }
 }
 
 function updateFactorDetails() {
@@ -310,7 +348,8 @@ function clearActivityForm() {
   form.record_id.value = '';
   form.year.value = new Date().getFullYear();
   form.month.value = String(new Date().getMonth() + 1).padStart(2, '0');
-  updateFactorDetails();
+  form.department_id.value = '';
+  clearActivitySelection('Select a department first.');
   showToast('Form cleared.', 'info');
 }
 
@@ -355,7 +394,7 @@ async function loadRecords(button) {
   });
 }
 
-function editRecord(recordId) {
+async function editRecord(recordId) {
   const record = state.records.find(item => String(item.record_id) === String(recordId));
   if (!record) {
     showToast('Cannot edit record because it is not loaded in the table.', 'warning');
@@ -363,10 +402,13 @@ function editRecord(recordId) {
   }
   const form = document.getElementById('activityForm');
   showPage('add-record');
-  Object.keys(record).forEach(key => {
-    if (form[key]) form[key].value = record[key];
-  });
-  updateFactorDetails();
+  form.record_id.value = record.record_id || '';
+  form.year.value = record.year || new Date().getFullYear();
+  form.month.value = String(record.month || '').padStart(2, '0');
+  form.department_id.value = record.department_id || '';
+  form.amount.value = record.amount || '';
+  form.remark.value = record.remark || '';
+  await loadActivitiesForSelectedDepartment(record.factor_id);
   showToast('Record loaded for editing.', 'info');
 }
 
@@ -411,7 +453,7 @@ async function loadFactors(button) {
             <td><button class="btn-edit" onclick="openFactorModal('${safeText(factor.factor_id)}')">Edit</button> <button class="btn-delete" onclick="deactivateFactor('${safeText(factor.factor_id)}', this)">Deactivate</button></td>
           </tr>`),
         'No emission factors found. Add a factor or import sample emission factors.');
-      initializeActivityForm();
+      populateDepartmentActivityControls();
       if (button) showToast(`Emission factors loaded (${state.factors.length}).`, 'success');
     } catch (error) {
       setTableStatus('factorsTable', 'Cannot load emission factors.', 'error');
@@ -432,7 +474,7 @@ function factorFormHtml(factor = {}) {
 }
 
 function openFactorModal(factorId) {
-  const factor = state.factors.find(item => String(item.factor_id) === String(factorId)) || {};
+  const factor = state.allFactors.find(item => String(item.factor_id) === String(factorId)) || state.factors.find(item => String(item.factor_id) === String(factorId)) || {};
   document.getElementById('modalContent').innerHTML = factorFormHtml(factor);
   document.getElementById('modal').classList.remove('hidden');
   document.getElementById('factorForm').onsubmit = async event => {
@@ -444,6 +486,7 @@ function openFactorModal(factorId) {
         showToast('Factor saved.', 'success');
         await loadLookups();
         await loadFactors();
+        await loadDepartmentActivities();
       } catch (error) {
         handleError(error, 'Cannot save emission factor.');
       }
@@ -456,7 +499,9 @@ async function deactivateFactor(factorId, button) {
     try {
       await runServer('deactivateEmissionFactor', factorId);
       showToast('Factor deactivated.', 'success');
+      await loadLookups();
       await loadFactors();
+      await loadDepartmentActivities();
     } catch (error) {
       handleError(error, 'Cannot deactivate emission factor.');
     }
@@ -468,9 +513,81 @@ async function importSampleFactors(button) {
     try {
       const result = await runServer('importSampleEmissionFactors');
       showToast(`${result.imported} sample factors imported.`, 'success');
+      await loadLookups();
       await loadFactors();
+      await loadDepartmentActivities();
     } catch (error) {
       handleError(error, 'Cannot import sample factors.');
+    }
+  });
+}
+
+
+function populateDepartmentActivityControls() {
+  const departmentSelect = document.getElementById('mapDepartment');
+  const factorSelect = document.getElementById('mapFactor');
+  if (!departmentSelect || !factorSelect) return;
+  const previousDepartment = departmentSelect.value;
+  const previousFactor = factorSelect.value;
+  departmentSelect.innerHTML = optionHtml(activeOnly(state.departments), 'department_id', 'department_name', 'Select department');
+  factorSelect.innerHTML = optionHtml(activeOnly(state.allFactors), 'factor_id', 'activity_name', 'Select activity');
+  departmentSelect.value = previousDepartment;
+  factorSelect.value = previousFactor;
+  departmentSelect.onchange = () => loadDepartmentActivities();
+}
+
+async function loadDepartmentActivities(button) {
+  return withButtonLoading(button, 'Loading...', async () => {
+    try {
+      populateDepartmentActivityControls();
+      state.departmentActivities = await runServer('getDepartmentActivities', { includeInactive: true });
+      const selectedDepartmentId = document.getElementById('mapDepartment')?.value || '';
+      const rows = state.departmentActivities.filter(mapping => !selectedDepartmentId || String(mapping.department_id) === String(selectedDepartmentId));
+      renderTable('departmentActivitiesTable', ['Department', 'Activity', 'Active', 'Actions'],
+        rows.map(mapping => `
+          <tr>
+            <td>${safeText(mapping.department_name)}</td><td>${safeText(mapping.activity_name)}</td><td>${safeText(mapping.is_active)}</td>
+            <td><button class="btn-delete" onclick="deactivateDepartmentActivity('${safeText(mapping.department_activity_id)}', this)">Deactivate</button></td>
+          </tr>`),
+        'No activities assigned to this department yet.');
+      if (button) showToast(`Department activity assignments loaded (${rows.length}).`, 'success');
+    } catch (error) {
+      setTableStatus('departmentActivitiesTable', 'Cannot load department activity assignments.', 'error');
+      handleError(error, 'Cannot load department activity assignments.');
+    }
+  });
+}
+
+async function assignDepartmentActivity(button) {
+  return withButtonLoading(button, 'Assigning...', async () => {
+    const departmentId = document.getElementById('mapDepartment')?.value;
+    const factorId = document.getElementById('mapFactor')?.value;
+    if (!departmentId || !factorId) {
+      showToast('Select both a department and an activity to assign.', 'warning');
+      return;
+    }
+    try {
+      await runServer('saveDepartmentActivity', { department_id: departmentId, factor_id: factorId });
+      showToast('Activity assigned to department.', 'success');
+      await loadDepartmentActivities();
+      const form = document.getElementById('activityForm');
+      if (form.department_id.value === departmentId) await loadActivitiesForSelectedDepartment(form.factor_id.value);
+    } catch (error) {
+      handleError(error, 'Cannot assign activity to department.');
+    }
+  });
+}
+
+async function deactivateDepartmentActivity(departmentActivityId, button) {
+  return withButtonLoading(button, 'Deactivating...', async () => {
+    try {
+      await runServer('deactivateDepartmentActivity', departmentActivityId);
+      showToast('Department activity assignment deactivated.', 'success');
+      await loadDepartmentActivities();
+      const form = document.getElementById('activityForm');
+      if (form.department_id.value) await loadActivitiesForSelectedDepartment(form.factor_id.value);
+    } catch (error) {
+      handleError(error, 'Cannot deactivate department activity assignment.');
     }
   });
 }
@@ -487,6 +604,7 @@ async function loadDepartments(button) {
           </tr>`),
         'No departments found. Add a department to start entering activity records.');
       buildFilters();
+      populateDepartmentActivityControls();
       if (button) showToast(`Departments loaded (${state.departments.length}).`, 'success');
     } catch (error) {
       setTableStatus('departmentsTable', 'Cannot load departments.', 'error');
@@ -516,6 +634,7 @@ function openDepartmentModal(departmentId) {
         showToast('Department saved.', 'success');
         await loadLookups();
         await loadDepartments();
+        await loadDepartmentActivities();
       } catch (error) {
         handleError(error, 'Cannot save department.');
       }
@@ -528,7 +647,9 @@ async function deactivateDepartment(departmentId, button) {
     try {
       await runServer('deactivateDepartment', departmentId);
       showToast('Department deactivated.', 'success');
+      await loadLookups();
       await loadDepartments();
+      await loadDepartmentActivities();
     } catch (error) {
       handleError(error, 'Cannot deactivate department.');
     }

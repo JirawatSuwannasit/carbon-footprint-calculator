@@ -61,9 +61,9 @@ function buildActivityRecordPayload_(data, existing) {
   const department = departments.find(function(item) { return String(item.department_id) === String(data.department_id); });
   if (!department) throw new Error('Department not found.');
 
-  const factors = getEmissionFactors({ includeInactive: true });
-  const factor = factors.find(function(item) { return String(item.factor_id) === String(data.factor_id); });
-  if (!factor) throw new Error('Emission factor not found.');
+  const allowedFactors = getActivitiesByDepartment(department.department_id);
+  const factor = allowedFactors.find(function(item) { return String(item.factor_id) === String(data.factor_id); });
+  if (!factor) throw new Error('Selected activity is not assigned to this department or is inactive.');
 
   const totalFactor = toNumber_(factor.total_co2e_factor);
   const kgco2e = amount * totalFactor;
