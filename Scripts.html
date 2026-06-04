@@ -8,7 +8,8 @@ const state = {
   departmentActivities: [],
   records: [],
   charts: {},
-  reportFilters: {}
+  reportFilters: {},
+  pendingActivityDraft: null
 };
 
 const months = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0'));
@@ -462,14 +463,24 @@ async function loadFactors(button) {
   });
 }
 
-function factorFormHtml(factor = {}) {
-  const fields = ['factor_id', 'factor_name', 'co2_factor', 'fossil_ch4_factor', 'ch4_factor', 'n2o_factor', 'total_co2e_factor', 'total_co2e_unit', 'factor_source', 'factor_year', 'gwp_version'];
+function factorFormHtml(factor = {}, options = {}) {
+  const cancelAction = options.cancelAction || 'closeModal()';
   return `
     <h3>${factor.factor_id ? 'Edit' : 'Add'} Emission Factor</h3>
     <form id="factorForm" class="form-grid">
-      ${fields.map(key => `<label>${key.replaceAll('_', ' ')}<input name="${key}" value="${safeText(factor[key])}" ${key === 'factor_id' ? 'readonly' : ''}></label>`).join('')}
+      <input type="hidden" name="factor_id" value="${safeText(factor.factor_id)}">
+      <label>Factor Name<input name="factor_name" value="${safeText(factor.factor_name)}" required></label>
+      <label>CO2 Factor<input name="co2_factor" type="number" step="0.000001" value="${safeText(factor.co2_factor)}"></label>
+      <label>Fossil CH4 Factor<input name="fossil_ch4_factor" type="number" step="0.000001" value="${safeText(factor.fossil_ch4_factor)}"></label>
+      <label>CH4 Factor<input name="ch4_factor" type="number" step="0.000001" value="${safeText(factor.ch4_factor)}"></label>
+      <label>N2O Factor<input name="n2o_factor" type="number" step="0.000001" value="${safeText(factor.n2o_factor)}"></label>
+      <label>Total CO2e Factor<input name="total_co2e_factor" type="number" step="0.000001" value="${safeText(factor.total_co2e_factor)}" required></label>
+      <label>Total CO2e Unit<input name="total_co2e_unit" value="${safeText(factor.total_co2e_unit)}" required></label>
+      <label>Factor Source<input name="factor_source" value="${safeText(factor.factor_source)}"></label>
+      <label>Factor Year<input name="factor_year" value="${safeText(factor.factor_year)}"></label>
+      <label>GWP Version<input name="gwp_version" value="${safeText(factor.gwp_version)}"></label>
       <label>Active<select name="is_active"><option value="true">true</option><option value="false" ${String(factor.is_active) === 'false' ? 'selected' : ''}>false</option></select></label>
-      <div class="span-2"><button class="btn-save">Save</button> <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button></div>
+      <div class="span-2"><button class="btn-save">Save</button> <button type="button" class="btn-cancel" onclick="${cancelAction}">Cancel</button></div>
     </form>`;
 }
 
@@ -554,11 +565,11 @@ function activityFormHtml(activity = {}) {
     <form id="masterActivityForm" class="form-grid">
       <input type="hidden" name="activity_id" value="${safeText(activity.activity_id)}">
       <label>Activity Name<input name="activity_name" value="${safeText(activity.activity_name)}" required></label>
-      <label>Group<input name="group" value="${safeText(activity.group)}"></label>
-      <label>Scope<input name="scope" value="${safeText(activity.scope)}"></label>
-      <label>Category<input name="category" value="${safeText(activity.category)}"></label>
+      <label>Group<input name="group" value="${safeText(activity.group)}" required></label>
+      <label>Scope<input name="scope" value="${safeText(activity.scope)}" required></label>
+      <label>Category<input name="category" value="${safeText(activity.category)}" required></label>
       <label>Unit<input name="unit" value="${safeText(activity.unit)}" required></label>
-      <label>Default Emission Factor<select name="default_factor_id" required>${factorOptions}</select></label>
+      <div class="span-2 factor-picker"><label>Default Emission Factor<select name="default_factor_id" required>${factorOptions}</select></label><button type="button" class="btn-secondary" onclick="openNestedFactorModal()">Add New Emission Factor</button></div>
       <label>Active<select name="is_active"><option value="true">true</option><option value="false" ${String(activity.is_active) === 'false' ? 'selected' : ''}>false</option></select></label>
       <div class="span-2"><button class="btn-save">Save</button> <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button></div>
     </form>`;
@@ -570,7 +581,54 @@ function openActivityModal(activityId) {
   document.getElementById('modal').classList.remove('hidden');
   const form = document.getElementById('masterActivityForm');
   form.default_factor_id.value = activity.default_factor_id || '';
-  form.onsubmit = async event => {
+wireActivityFormSubmit(activityId);
+}
+
+
+function getActivityFormDraft() {
+  const form = document.getElementById('masterActivityForm');
+  return form ? Object.fromEntries(new FormData(form).entries()) : {};
+}
+
+function openNestedFactorModal() {
+  const draft = getActivityFormDraft();
+  state.pendingActivityDraft = draft;
+  document.getElementById('modalContent').innerHTML = factorFormHtml({}, { cancelAction: 'restorePendingActivityDraft()' });
+  const factorForm = document.getElementById('factorForm');
+  factorForm.onsubmit = async event => {
+    event.preventDefault();
+    await withButtonLoading(event.submitter, 'Saving...', async () => {
+      try {
+        const payload = Object.fromEntries(new FormData(event.target).entries());
+        const savedFactor = await runServer('saveEmissionFactor', payload);
+        showToast('Emission factor saved. It has been selected for the activity.', 'success');
+        await loadLookups();
+        restoreActivityModalFromDraft(Object.assign({}, draft, { default_factor_id: savedFactor.factor_id }));
+        state.pendingActivityDraft = null;
+      } catch (error) {
+        handleError(error, 'Cannot save new emission factor.');
+      }
+    });
+  };
+}
+
+function restorePendingActivityDraft() {
+  restoreActivityModalFromDraft(state.pendingActivityDraft || {});
+  state.pendingActivityDraft = null;
+}
+
+function restoreActivityModalFromDraft(draft) {
+  draft = draft || {};
+  document.getElementById('modalContent').innerHTML = activityFormHtml(draft);
+  const form = document.getElementById('masterActivityForm');
+  Object.keys(draft).forEach(key => {
+    if (form[key]) form[key].value = draft[key];
+  });
+  wireActivityFormSubmit(draft.activity_id);
+}
+
+function wireActivityFormSubmit(activityId) {
+  document.getElementById('masterActivityForm').onsubmit = async event => {
     event.preventDefault();
     await withButtonLoading(event.submitter, 'Saving...', async () => {
       try {

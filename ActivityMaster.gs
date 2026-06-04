@@ -10,7 +10,7 @@ function getActivities(options) {
 
 function buildActivityPayload_(data, existing) {
   data = data || {};
-  requireFields_(data, ['activity_name', 'unit', 'default_factor_id']);
+  requireFields_(data, ['activity_name', 'group', 'scope', 'category', 'unit', 'default_factor_id']);
   const factor = getFactorById(data.default_factor_id);
   if (!toBoolean_(factor.is_active)) throw new Error('default_factor_id must reference an active emission factor.');
   const now = nowIso_();

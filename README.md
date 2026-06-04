@@ -153,6 +153,12 @@ These are sample placeholder factors only. Replace them with your company's appr
 
 
 
+## Activity-first workflow
+
+Activity Master is the starting point for setup. Create the business activity first, choose an active default emission factor, and use **Add New Emission Factor** inside the Add/Edit Activity modal if the needed factor does not exist yet. Saving a nested factor refreshes the activity form dropdown and selects the new factor without clearing the activity fields already typed.
+
+The Emission Factor Master page is for searching, viewing, editing, and deactivating existing factors; new factors are normally created from the Activity Master workflow.
+
 ## Activity master and department assignments
 
 The app uses this architecture: `Departments → Department_Activities → Activity_Master → Emission_Factors`.
@@ -163,7 +169,7 @@ The app uses this architecture: `Departments → Department_Activities → Activ
 
 The Add Activity Record form disables the Activity Name dropdown until a department is selected, then loads only active assigned activities through `getActivitiesByDepartment(departmentId)`. If no active activities are assigned, the form shows "No activities assigned to this department. Please set activities in Department Master."
 
-Activities can be managed in the **Activity Master** section inside the Emission Factor Master page. Department activity assignments are managed from the **Set Activities** button in each Department Master row.
+Activities can be managed from the **Activity Master** page. Department activity assignments are managed from the **Set Activities** button in each Department Master row.
 
 ## Troubleshooting Activity Records
 

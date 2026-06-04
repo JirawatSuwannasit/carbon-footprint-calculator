@@ -10,8 +10,9 @@
   <aside class="sidebar">
     <h1>Carbon Calculator</h1>
     <button class="nav active" data-page="dashboard">Dashboard</button>
-    <button class="nav" data-page="add-record">Add Activity</button>
+    <button class="nav" data-page="add-record">Add Activity Record</button>
     <button class="nav" data-page="records">Activity Records</button>
+    <button class="nav" data-page="activities">Activity Master</button>
     <button class="nav" data-page="factors">Emission Factors</button>
     <button class="nav" data-page="departments">Departments</button>
     <button class="nav" data-page="report">Report</button>
@@ -52,15 +53,16 @@
       <div class="table-wrap"><table id="recordsTable"></table></div>
     </section>
 
+    <section id="activities" class="page">
+      <div class="page-header"><h2>Activity Master</h2><button class="btn-primary" onclick="openActivityModal()">Add Activity</button></div>
+      <div class="filters"><input id="activitySearch" placeholder="Search activities"><button class="btn-primary" onclick="loadActivities(this)">Search</button></div>
+      <div class="table-wrap"><table id="activitiesTable"></table></div>
+    </section>
+
     <section id="factors" class="page">
-      <div class="page-header"><h2>Emission Factor Master</h2><button class="btn-primary" onclick="openFactorModal()">Add Factor</button></div>
-      <div class="filters"><input id="factorSearch" placeholder="Search factors"><button class="btn-primary" onclick="loadFactors(this)">Search</button><button class="btn-secondary" onclick="importSampleFactors(this)">Import sample emission factors</button></div>
+      <div class="page-header"><h2>Emission Factor Master</h2></div>
+      <div class="filters"><input id="factorSearch" placeholder="Search factors"><button class="btn-primary" onclick="loadFactors(this)">Search</button></div>
       <div class="table-wrap"><table id="factorsTable"></table></div>
-      <div class="card section-card">
-        <div class="page-header"><h3>Activity Master</h3><button class="btn-primary" onclick="openActivityModal()">Add Activity</button></div>
-        <div class="filters"><input id="activitySearch" placeholder="Search activities"><button class="btn-primary" onclick="loadActivities(this)">Search</button></div>
-        <div class="table-wrap"><table id="activitiesTable"></table></div>
-      </div>
     </section>
 
     <section id="departments" class="page">

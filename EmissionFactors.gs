@@ -10,7 +10,9 @@ function getEmissionFactors(options) {
 
 function buildEmissionFactorPayload_(data, existing) {
   data = data || {};
-  requireFields_(data, ['factor_name', 'total_co2e_factor']);
+  requireFields_(data, ['factor_name', 'total_co2e_factor', 'total_co2e_unit']);
+  const totalFactor = Number(data.total_co2e_factor);
+  if (!Number.isFinite(totalFactor)) throw new Error('total_co2e_factor must be numeric.');
   const now = nowIso_();
   return {
     factor_id: data.factor_id || generateId_('EF'),
@@ -19,8 +21,8 @@ function buildEmissionFactorPayload_(data, existing) {
     fossil_ch4_factor: toNumber_(data.fossil_ch4_factor),
     ch4_factor: toNumber_(data.ch4_factor),
     n2o_factor: toNumber_(data.n2o_factor),
-    total_co2e_factor: toNumber_(data.total_co2e_factor),
-    total_co2e_unit: data.total_co2e_unit || 'kg CO2e/unit',
+    total_co2e_factor: totalFactor,
+    total_co2e_unit: data.total_co2e_unit,
     factor_source: data.factor_source || '',
     factor_year: data.factor_year || '',
     gwp_version: data.gwp_version || '',
